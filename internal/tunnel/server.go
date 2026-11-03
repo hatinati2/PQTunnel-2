@@ -351,12 +351,22 @@ func peerForDestination(peers map[string]*peer, dst netip.Addr) *peer {
 }
 
 func ServerTLSConfig(cert tls.Certificate, clientCA *x509.CertPool) *tls.Config {
-	cfg := StrictTLS13Config()
+	cfg, err := ServerTLSConfigForMode(cert, clientCA, TLSKeyExchangeHybrid)
+	if err != nil {
+		panic(err)
+	}
+	return cfg
+}
+
+func ServerTLSConfigForMode(cert tls.Certificate, clientCA *x509.CertPool, mode TLSKeyExchangeMode) (*tls.Config, error) {
+	cfg, err := TLS13ConfigForMode(mode)
+	if err != nil {
+		return nil, err
+	}
 	cfg.Certificates = []tls.Certificate{cert}
 	cfg.ClientAuth = tls.RequireAndVerifyClientCert
 	cfg.ClientCAs = clientCA
-	cfg.SessionTicketsDisabled = true
-	return cfg
+	return cfg, nil
 }
 
 // peerPacketAllowed enforces the authenticated peer's source ranges and the
