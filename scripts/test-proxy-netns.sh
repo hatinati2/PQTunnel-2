@@ -182,8 +182,8 @@ ip -n "$GW_NS" addr add 192.0.2.1/30 dev eth0
 ip -n "$DL_NS" addr add 192.0.2.2/30 dev eth0
 ip -n "$GW_NS" link set eth0 up
 ip -n "$DL_NS" link set eth0 up
-ip -n "$GW_NS" addr add 203.0.113.10/32 dev lo
-ip -n "$GW_NS" route get 203.0.113.10 | grep -q '^local 8\.8\.8\.8' || fail 'fake public address does not have a namespace-local route'
+ip -n "$GW_NS" addr add 8.8.8.8/32 dev lo
+ip -n "$GW_NS" route get 8.8.8.8 | grep -q '^local 8\.8\.8\.8' || fail 'fake public address does not have a namespace-local route'
 
 # Wait for IPv6 duplicate-address detection to finish before taking snapshots.
 for ns in "$GW_NS" "$DL_NS"; do
@@ -496,18 +496,18 @@ def request(host, port):
     reply = exact(s, 10)
     s.close()
     return reply[1]
-if request("203.0.113.10", 18445) == 0:
+if request("8.8.8.8", 18445) == 0:
     raise SystemExit("FAIL: unlisted TCP port was allowed")
 if request("192.0.2.1", 18444) == 0:
     raise SystemExit("FAIL: reserved target address was allowed")
 print("PASS: disallowed port and reserved destination were rejected")
 PY
 
-ip netns exec "$GW_NS" python3 -u "$LAB_DIR/echo_server.py" 203.0.113.10 18444 direct-ok: > "$LAB_DIR/direct-server.log" 2>&1 &
+ip netns exec "$GW_NS" python3 -u "$LAB_DIR/echo_server.py" 8.8.8.8 18444 direct-ok: > "$LAB_DIR/direct-server.log" 2>&1 &
 DIRECT_SERVER_PID=$!
 ip netns exec "$DL_NS" python3 -u "$LAB_DIR/echo_server.py" 192.0.2.2 18081 reverse-ok: > "$LAB_DIR/reverse-server.log" 2>&1 &
 REVERSE_SERVER_PID=$!
-ip netns exec "$GW_NS" python3 -u "$LAB_DIR/speed_server.py" 203.0.113.10 18446 > "$LAB_DIR/speed-gateway.log" 2>&1 &
+ip netns exec "$GW_NS" python3 -u "$LAB_DIR/speed_server.py" 8.8.8.8 18446 > "$LAB_DIR/speed-gateway.log" 2>&1 &
 SPEED_SERVER_GW_PID=$!
 ip netns exec "$DL_NS" python3 -u "$LAB_DIR/speed_server.py" 192.0.2.2 18083 > "$LAB_DIR/speed-dialer.log" 2>&1 &
 SPEED_SERVER_DL_PID=$!
@@ -532,9 +532,9 @@ wait_log_count() {
   done
   return 1
 }
-wait_listener "$GW_NS" '203.0.113.10:18444' "$DIRECT_SERVER_PID" || fail 'Direct test target did not start'
+wait_listener "$GW_NS" '8.8.8.8:18444' "$DIRECT_SERVER_PID" || fail 'Direct test target did not start'
 wait_listener "$DL_NS" '192.0.2.2:18081' "$REVERSE_SERVER_PID" || fail 'Reverse target did not start'
-wait_listener "$GW_NS" '203.0.113.10:18446' "$SPEED_SERVER_GW_PID" || fail 'Direct throughput target did not start'
+wait_listener "$GW_NS" '8.8.8.8:18446' "$SPEED_SERVER_GW_PID" || fail 'Direct throughput target did not start'
 wait_listener "$DL_NS" '192.0.2.2:18083' "$SPEED_SERVER_DL_PID" || fail 'Reverse throughput target did not start'
 
 start_gateway() {
@@ -573,12 +573,12 @@ start_dialer
 wait_listener "$DL_NS" '127.0.0.1:1080' "$DL_PID" || fail 'Dialer SOCKS5 listener did not start'
 wait_log_count "$LAB_DIR/dialer.log" 'authenticated transport connected' 1 "$DL_PID" || fail 'Dialer failed to establish authenticated TLS transport'
 
-ip netns exec "$DL_NS" python3 "$LAB_DIR/exercise.py" 192.0.2.1 18080 1080 203.0.113.10 18444
+ip netns exec "$DL_NS" python3 "$LAB_DIR/exercise.py" 192.0.2.1 18080 1080 8.8.8.8 18444
 ip netns exec "$DL_NS" python3 "$LAB_DIR/reject.py" 1080
 
 # Keep both directions active, then kill the isolated Gateway transport.
 # The clients must observe stream closure; the Dialer then reconnects automatically.
-ip netns exec "$DL_NS" python3 "$LAB_DIR/hold.py" 192.0.2.1 18080 1080 203.0.113.10 18444 > "$LAB_DIR/hold.log" 2>&1 &
+ip netns exec "$DL_NS" python3 "$LAB_DIR/hold.py" 192.0.2.1 18080 1080 8.8.8.8 18444 > "$LAB_DIR/hold.log" 2>&1 &
 HOLD_PID=$!
 wait_log_count "$LAB_DIR/hold.log" 'READY' 1 "$HOLD_PID" || fail 'could not establish live streams for disconnect test'
 target_ready=0
@@ -596,14 +596,14 @@ HOLD_PID=""
 start_gateway
 wait_listener "$GW_NS" '192.0.2.1:18443' "$GW_PID" || fail 'Gateway did not restart'
 wait_log_count "$LAB_DIR/dialer.log" 'authenticated transport connected' 2 "$DL_PID" || fail 'Dialer did not reconnect after Gateway restart'
-ip netns exec "$DL_NS" python3 "$LAB_DIR/exercise.py" 192.0.2.1 18080 1080 203.0.113.10 18444
+ip netns exec "$DL_NS" python3 "$LAB_DIR/exercise.py" 192.0.2.1 18080 1080 8.8.8.8 18444
 
 # Measure real proxied TCP transfers after the reconnect test. The client starts
 # timing after the SOCKS/Reverse connection is established, so connection setup
 # is excluded. Traffic remains inside disposable namespaces over the TLS session.
 # Three 16 MiB rounds per direction are measurements, not hard CI performance gates.
-ip netns exec "$DL_NS" python3 "$LAB_DIR/benchmark.py" direct 192.0.2.1 18082 1080 203.0.113.10 18446 16777216 3 | tee "$LAB_DIR/speed-benchmark.log"
-ip netns exec "$GW_NS" python3 "$LAB_DIR/benchmark.py" reverse 192.0.2.1 18082 1080 203.0.113.10 18446 16777216 3 | tee -a "$LAB_DIR/speed-benchmark.log"
+ip netns exec "$DL_NS" python3 "$LAB_DIR/benchmark.py" direct 192.0.2.1 18082 1080 8.8.8.8 18446 16777216 3 | tee "$LAB_DIR/speed-benchmark.log"
+ip netns exec "$GW_NS" python3 "$LAB_DIR/benchmark.py" reverse 192.0.2.1 18082 1080 8.8.8.8 18446 16777216 3 | tee -a "$LAB_DIR/speed-benchmark.log"
 
 snapshot_ns "$GW_NS" "$LAB_DIR/gateway.after"
 snapshot_ns "$DL_NS" "$LAB_DIR/dialer.after"
