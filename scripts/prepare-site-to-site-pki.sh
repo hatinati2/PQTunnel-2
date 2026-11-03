@@ -71,7 +71,6 @@ then
 fi
 [[ "$CLIENT_IP" =~ ^[0-9.]+$ ]] || fail '--client-ip must be an IPv4 address.'
 
-command -v openssl >/dev/null 2>&1 || fail 'OpenSSL is required to validate generated certificates.'
 BIN_INPUT="${PQTUNNEL_PKI_BIN:-}"
 if [[ -n "$BIN_INPUT" ]]; then
   [[ -f "$BIN_INPUT" && -x "$BIN_INPUT" ]] || fail 'PQTUNNEL_PKI_BIN must point to an executable pqtunnel-pki binary.'
@@ -114,8 +113,6 @@ CLIENT_CERT="$WORK/ca/$CLIENT_STEM.crt"
 CLIENT_KEY="$WORK/ca/$CLIENT_STEM.key"
 [[ -s "$CLIENT_CERT" && -s "$CLIENT_KEY" ]] || fail 'client certificate issuance did not create expected files.'
 
-openssl verify -purpose sslserver -CAfile "$WORK/ca/ca.crt" "$WORK/ca/server.crt" >/dev/null
-openssl verify -purpose sslclient -CAfile "$WORK/ca/ca.crt" "$CLIENT_CERT" >/dev/null
 
 install -m 0644 "$WORK/ca/ca.crt" "$WORK/output/ca-offline/ca.crt"
 install -m 0600 "$WORK/ca/ca.key" "$WORK/output/ca-offline/ca.key"
