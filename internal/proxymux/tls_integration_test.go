@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/tunnel"
+	"github.com/hatinati2/PQTunnel-2/internal/tunnel"
 )
 
 type tlsMuxFixture struct {
