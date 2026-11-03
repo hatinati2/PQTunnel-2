@@ -9,8 +9,8 @@ if [[ ! "$PQTUNNEL_REF" =~ ^[A-Za-z0-9._/-]+$ || "$PQTUNNEL_REF" == *..* ]]; the
   printf 'pqtunnel-bootstrap: invalid PQTUNNEL_REF; use main for read-only checks or a reviewed commit SHA for installation.\n' >&2
   exit 2
 fi
-RAW_BASE="https://raw.githubusercontent.com/hatinati2/PQTunnel/${PQTUNNEL_REF}"
-API_TARBALL="https://api.github.com/repos/hatinati2/PQTunnel/tarball/${PQTUNNEL_REF}"
+RAW_BASE="https://raw.githubusercontent.com/hatinati2/PQTunnel-2/${PQTUNNEL_REF}"
+API_TARBALL="https://api.github.com/repos/hatinati2/PQTunnel-2/tarball/${PQTUNNEL_REF}"
 WORK_DIR=
 
 fail() { printf 'pqtunnel-bootstrap: %s\n' "$*" >&2; exit 1; }
@@ -22,8 +22,8 @@ usage() {
   cat <<'USAGE'
 PQTunnel bootstrap. The default "preflight" mode is read-only.
 
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel/main/scripts/pqtunnel-bootstrap.sh | bash
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel/main/scripts/pqtunnel-bootstrap.sh | bash -s -- preflight --role gateway
+  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/scripts/pqtunnel-bootstrap.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/scripts/pqtunnel-bootstrap.sh | bash -s -- preflight --role gateway
   bash scripts/pqtunnel-bootstrap.sh check-config --kind gateway --app-env APP.env --network-env NETWORK.env
 
 Install modes require pre-created certificates and manually reviewed config files.
@@ -31,9 +31,9 @@ One-line examples below change services/network state; use them only on a dispos
 after review, and replace every example path with staged files on the destination host.
 
   # Use a reviewed 40-character commit SHA, replacing the placeholder below:
-  REF=REPLACE_WITH_REVIEWED_40_CHAR_SHA; curl -fsSL "https://raw.githubusercontent.com/hatinati2/PQTunnel/${REF}/scripts/pqtunnel-bootstrap.sh" | sudo env PQTUNNEL_REF="$REF" bash -s -- install-server --pki-dir /root/pqtunnel-input/germany-pki --server-env-file /root/pqtunnel-input/germany-app.env --network-env-file /root/pqtunnel-input/germany-network.env --start --apply-network
+  REF=REPLACE_WITH_REVIEWED_40_CHAR_SHA; curl -fsSL "https://raw.githubusercontent.com/hatinati2/PQTunnel-2/${REF}/scripts/pqtunnel-bootstrap.sh" | sudo env PQTUNNEL_REF="$REF" bash -s -- install-server --pki-dir /root/pqtunnel-input/germany-pki --server-env-file /root/pqtunnel-input/germany-app.env --network-env-file /root/pqtunnel-input/germany-network.env --start --apply-network
 
-  REF=REPLACE_WITH_REVIEWED_40_CHAR_SHA; curl -fsSL "https://raw.githubusercontent.com/hatinati2/PQTunnel/${REF}/scripts/pqtunnel-bootstrap.sh" | sudo env PQTUNNEL_REF="$REF" bash -s -- install-client --pki-dir /root/pqtunnel-input/iran-pki --client-env-file /root/pqtunnel-input/iran-app.env --network-env-file /root/pqtunnel-input/iran-network.env --start
+  REF=REPLACE_WITH_REVIEWED_40_CHAR_SHA; curl -fsSL "https://raw.githubusercontent.com/hatinati2/PQTunnel-2/${REF}/scripts/pqtunnel-bootstrap.sh" | sudo env PQTUNNEL_REF="$REF" bash -s -- install-client --pki-dir /root/pqtunnel-input/iran-pki --client-env-file /root/pqtunnel-input/iran-app.env --network-env-file /root/pqtunnel-input/iran-network.env --start
 
 Install modes require PQTUNNEL_REF to be a reviewed 40-character commit SHA. The bootstrap
 script and source tarball both use that same ref; mutable branches such as main are refused.
@@ -45,8 +45,18 @@ must be staged first. Existing installations are not overwritten.
 USAGE
 }
 
+build_pki_verifier() {
+  local output="$1"
+  [[ -n "${SOURCE_DIR:-}" && -f "$SOURCE_DIR/cmd/pqtunnel-pki/main.go" ]] || fail 'Go-native PKI verifier source is missing.'
+  (
+    cd "$SOURCE_DIR"
+    GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$output" ./cmd/pqtunnel-pki
+  )
+  chmod 0700 "$output"
+}
+
 get_source() {
-  if [[ -f ./go.mod && -f ./scripts/install-server.sh ]] && grep -Fxq 'module github.com/hatinati2/PQTunnel' ./go.mod; then
+  if [[ -f ./go.mod && -f ./scripts/install-server.sh ]] && grep -Fxq 'module github.com/hatinati2/PQTunnel-2' ./go.mod; then
     SOURCE_DIR="$(pwd)"
     return
   fi
@@ -128,7 +138,7 @@ check_no_existing() {
 
 require_pinned_source_ref() {
   [[ "$PQTUNNEL_REF" =~ ^[0-9a-f]{40}$ ]] || fail 'install modes require PQTUNNEL_REF to be a reviewed, lowercase 40-character commit SHA; no changes made.'
-  if [[ -f ./go.mod && -f ./scripts/install-server.sh ]] && grep -Fxq 'module github.com/hatinati2/PQTunnel' ./go.mod; then
+  if [[ -f ./go.mod && -f ./scripts/install-server.sh ]] && grep -Fxq 'module github.com/hatinati2/PQTunnel-2' ./go.mod; then
     local checkout_sha
     checkout_sha="$(git rev-parse HEAD 2>/dev/null)" || fail 'cannot verify the local checkout commit; use a clean checkout matching PQTUNNEL_REF.'
     [[ "$checkout_sha" == "$PQTUNNEL_REF" ]] || fail "local checkout HEAD ($checkout_sha) does not match PQTUNNEL_REF ($PQTUNNEL_REF); no changes made."
@@ -186,18 +196,21 @@ case "$MODE" in
     require_pinned_source_ref
     [[ "$(id -u)" == 0 ]] || fail 'install-server requires root (sudo); no changes made.'
     [[ -n "$PKI_DIR" && -d "$PKI_DIR" ]] || fail '--pki-dir must contain server.crt, server.key and ca.crt.'
-    check_os_prerequisites curl tar go openssl systemctl ip stat grep awk install
+    check_os_prerequisites curl tar go systemctl ip stat grep awk install
     GV="$(go env GOVERSION | sed 's/^go//')"
     if ! awk -v v="$GV" 'BEGIN { split(v,a,"."); exit !((a[1]+0)>1 || ((a[1]+0)==1 && (a[2]+0)>=27)) }'; then fail "Go 1.27+ is required; found $GV."; fi
     validate_gateway_config "$SERVER_ENV" "$NETWORK_ENV"
     [[ ! -e "$PKI_DIR/ca.key" ]] || fail 'ca.key must remain offline; it must not be copied to a server.'
     local_file=
     for local_file in server.crt server.key ca.crt; do [[ -s "$PKI_DIR/$local_file" ]] || fail "missing $PKI_DIR/$local_file."; done
-    for local_file in /usr/local/sbin/pqtunneld /etc/systemd/system/pqtunneld.service /etc/pqtunnel/pki/server.crt /etc/pqtunnel/pki/server.key /etc/pqtunnel/pki/ca.crt /etc/default/pqtunneld /etc/pqtunnel/site-to-site.env /usr/local/lib/pqtunnel/site-to-site-selective.sh; do [[ ! -e "$local_file" ]] || fail "existing artifact at $local_file; refusing to overwrite."; done
+    for local_file in /usr/local/sbin/pqtunneld /usr/local/bin/pqtunnel-pki /etc/systemd/system/pqtunneld.service /etc/pqtunnel/pki/server.crt /etc/pqtunnel/pki/server.key /etc/pqtunnel/pki/ca.crt /etc/default/pqtunneld /etc/pqtunnel/site-to-site.env /usr/local/lib/pqtunnel/site-to-site-selective.sh; do [[ ! -e "$local_file" ]] || fail "existing artifact at $local_file; refusing to overwrite."; done
     (( APPLY_NETWORK == 0 || START == 1 )) || fail '--apply-network requires --start.'
     get_source
+    PREFLIGHT_DIR="$(mktemp -d)"
+    trap 'rm -rf "$PREFLIGHT_DIR"; cleanup' EXIT
+    build_pki_verifier "$PREFLIGHT_DIR/pqtunnel-pki"
     echo 'Read-only preflight on this host (no network changes):'
-    bash "$SOURCE_DIR/scripts/site-to-site-preflight.sh" --role gateway
+    PQTUNNEL_PKI_BIN="$PREFLIGHT_DIR/pqtunnel-pki" PQTUNNEL_PREFLIGHT_PKI_DIR="$PKI_DIR" bash "$SOURCE_DIR/scripts/site-to-site-preflight.sh" --role gateway
     bash "$SOURCE_DIR/scripts/install-server.sh" --source "$SOURCE_DIR" --pki "$PKI_DIR"
     install -d -o root -g root -m 0750 /usr/local/lib/pqtunnel
     install -o root -g root -m 0755 "$SOURCE_DIR/scripts/site-to-site-selective.sh" /usr/local/lib/pqtunnel/site-to-site-selective.sh
@@ -224,19 +237,13 @@ case "$MODE" in
     require_pinned_source_ref
     [[ "$(id -u)" == 0 ]] || fail 'install-client requires root (sudo); no changes made.'
     [[ -n "$PKI_DIR" && -d "$PKI_DIR" ]] || fail '--pki-dir must contain client.crt, client.key and ca.crt.'
-    check_os_prerequisites curl tar go openssl systemctl ip nft sysctl stat grep awk install sha256sum sed
+    check_os_prerequisites curl tar go systemctl ip nft sysctl stat grep awk install sha256sum sed
     validate_dialer_config "$CLIENT_ENV" "$NETWORK_ENV"
     [[ ! -e "$PKI_DIR/ca.key" ]] || fail 'ca.key must remain offline; it must not be copied to a client.'
     for local_file in client.crt client.key ca.crt; do [[ -s "$PKI_DIR/$local_file" ]] || fail "missing $PKI_DIR/$local_file."; done
     GV="$(go env GOVERSION | sed 's/^go//')"
     if ! awk -v v="$GV" 'BEGIN { split(v,a,"."); exit !((a[1]+0)>1 || ((a[1]+0)==1 && (a[2]+0)>=27)) }'; then fail "Go 1.27+ is required; found $GV."; fi
-    openssl x509 -in "$PKI_DIR/client.crt" -noout >/dev/null || fail 'client.crt is not a valid PEM certificate.'
-    openssl pkey -in "$PKI_DIR/client.key" -noout >/dev/null || fail 'client.key is not a valid PEM private key.'
-    openssl verify -purpose sslclient -CAfile "$PKI_DIR/ca.crt" "$PKI_DIR/client.crt" >/dev/null || fail 'client certificate does not validate against ca.crt.'
-    CERT_PUB="$(openssl x509 -in "$PKI_DIR/client.crt" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}')"
-    KEY_PUB="$(openssl pkey -in "$PKI_DIR/client.key" -pubout -outform DER | sha256sum | awk '{print $1}')"
-    [[ "$CERT_PUB" == "$KEY_PUB" ]] || fail 'client.key does not match client.crt.'
-    for local_file in /usr/local/bin/pqtunnel-client /etc/systemd/system/pqtunnel-client.service /etc/pqtunnel/pki/client.crt /etc/pqtunnel/pki/client.key /etc/default/pqtunnel-client /etc/pqtunnel/site-to-site.env /usr/local/lib/pqtunnel/site-to-site-selective.sh /usr/local/lib/pqtunnel/run-client.sh /usr/local/lib/pqtunnel/stop-client-network.sh; do [[ ! -e "$local_file" ]] || fail "existing artifact at $local_file; refusing to overwrite."; done
+    for local_file in /usr/local/bin/pqtunnel-client /usr/local/bin/pqtunnel-pki /etc/systemd/system/pqtunnel-client.service /etc/pqtunnel/pki/client.crt /etc/pqtunnel/pki/client.key /etc/default/pqtunnel-client /etc/pqtunnel/site-to-site.env /usr/local/lib/pqtunnel/site-to-site-selective.sh /usr/local/lib/pqtunnel/run-client.sh /usr/local/lib/pqtunnel/stop-client-network.sh; do [[ ! -e "$local_file" ]] || fail "existing artifact at $local_file; refusing to overwrite."; done
     get_source
     for source_file in \
       deploy/systemd/pqtunnel-client.service \
@@ -245,17 +252,19 @@ case "$MODE" in
       scripts/stop-pqtunnel-client-network.sh; do
       [[ -s "$SOURCE_DIR/$source_file" ]] || fail "required client install file is missing: $source_file"
     done
-    echo 'Read-only preflight on this host (no network changes):'
-    bash "$SOURCE_DIR/scripts/site-to-site-preflight.sh" --role dialer
     BUILD_DIR="$(mktemp -d)"
     trap 'rm -rf "$BUILD_DIR"; cleanup' EXIT
-    
+    build_pki_verifier "$BUILD_DIR/pqtunnel-pki"
+    "$BUILD_DIR/pqtunnel-pki" verify --purpose client --cert "$PKI_DIR/client.crt" --key "$PKI_DIR/client.key" --ca "$PKI_DIR/ca.crt" || fail 'client ML-DSA certificate/key/chain validation failed.'
+    echo 'Read-only preflight on this host (no network changes):'
+    PQTUNNEL_PKI_BIN="$BUILD_DIR/pqtunnel-pki" PQTUNNEL_PREFLIGHT_PKI_DIR="$PKI_DIR" bash "$SOURCE_DIR/scripts/site-to-site-preflight.sh" --role dialer
     (
       cd "$SOURCE_DIR"
       GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$BUILD_DIR/pqtunnel-client" ./cmd/pqtunnel-client
     )
     install -d -o root -g root -m 0750 /etc/pqtunnel /etc/pqtunnel/pki /usr/local/lib/pqtunnel /var/lib/pqtunnel
     install -o root -g root -m 0755 "$BUILD_DIR/pqtunnel-client" /usr/local/bin/pqtunnel-client
+    install -o root -g root -m 0755 "$BUILD_DIR/pqtunnel-pki" /usr/local/bin/pqtunnel-pki
     install -o root -g root -m 0755 "$SOURCE_DIR/scripts/site-to-site-selective.sh" /usr/local/lib/pqtunnel/site-to-site-selective.sh
     install -o root -g root -m 0755 "$SOURCE_DIR/scripts/run-pqtunnel-client.sh" /usr/local/lib/pqtunnel/run-client.sh
     install -o root -g root -m 0755 "$SOURCE_DIR/scripts/stop-pqtunnel-client-network.sh" /usr/local/lib/pqtunnel/stop-client-network.sh
