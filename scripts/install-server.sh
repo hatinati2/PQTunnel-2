@@ -52,27 +52,46 @@ for path in /usr/local/sbin/pqtunneld /etc/systemd/system/pqtunneld.service /etc
   [[ ! -e "$path" ]] || fail "existing installation artifact detected at $path; refusing to overwrite it. Review/update manually with a backup."
 done
 
-BIN_SOURCE=""
 PKI_BIN="${PQTUNNEL_PKI_BIN:-}"
+BIN_SOURCE=""
 TMPBIN=""
 TMPPKI=""
+GO_SOURCE=0
+cleanup() {
+  [[ -z "$TMPBIN" ]] || rm -f "$TMPBIN"
+  [[ -z "$TMPPKI" ]] || rm -f "$TMPPKI"
+}
+trap cleanup EXIT
+
 if [[ -f "$SOURCE/go.mod" ]]; then
+  GO_SOURCE=1
   command -v go >/dev/null || fail 'Go 1.27+ is required to build from source. Use a matching Linux release bundle if Go is not installed.'
   GV="$(go env GOVERSION | sed 's/^go//')"
   if ! awk -v v="$GV" 'BEGIN { split(v,a,"."); exit !((a[1]+0)>1 || ((a[1]+0)==1 && (a[2]+0)>=27)) }'; then
     fail "Go 1.27+ is required; found $GV. No automatic toolchain installation is performed."
   fi
+fi
+
+# Use the repository's Go-native X.509 verifier. OpenSSL 3.0, shipped by
+# Ubuntu 24.04, does not understand ML-DSA certificates.
+if [[ -n "$PKI_BIN" ]]; then
+  [[ -f "$PKI_BIN" && -x "$PKI_BIN" ]] || fail 'PQTUNNEL_PKI_BIN must point to an executable pqtunnel-pki binary.'
+elif (( GO_SOURCE )); then
+  [[ -f "$SOURCE/cmd/pqtunnel-pki/main.go" ]] || fail 'cmd/pqtunnel-pki/main.go is missing from source tree.'
+  TMPPKI="$(mktemp)"
+  (cd "$SOURCE" && GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$TMPPKI" ./cmd/pqtunnel-pki)
+  PKI_BIN="$TMPPKI"
+elif [[ -x "$SOURCE/pqtunnel-pki" ]]; then
+  PKI_BIN="$SOURCE/pqtunnel-pki"
+else
+  fail 'source/release bundle must include cmd/pqtunnel-pki or executable pqtunnel-pki for ML-DSA validation.'
+fi
+"$PKI_BIN" verify --purpose server --cert "$PKI/server.crt" --key "$PKI/server.key" --ca "$PKI/ca.crt"
+
+if (( GO_SOURCE )); then
   [[ -f "$SOURCE/cmd/pqtunneld/main.go" ]] || fail 'cmd/pqtunneld/main.go is missing from source tree.'
   TMPBIN="$(mktemp)"
-  cleanup() {
-    [[ -z "$TMPBIN" ]] || rm -f "$TMPBIN"
-    [[ -z "$TMPPKI" ]] || rm -f "$TMPPKI"
-  }
-  trap cleanup EXIT
-  (
-    cd "$SOURCE"
-    GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$TMPBIN" ./cmd/pqtunneld
-  )
+  (cd "$SOURCE" && GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$TMPBIN" ./cmd/pqtunneld)
   BIN_SOURCE="$TMPBIN"
 elif [[ -f "$SOURCE/pqtunneld" ]]; then
   # Release packages are named ...-linux-amd64 or ...-linux-arm64. Verify the target before install.
@@ -96,25 +115,11 @@ elif [[ -f "$SOURCE/pqtunneld" ]]; then
     fail 'cannot verify the prebuilt binary architecture. Keep the original ...-linux-amd64 or ...-linux-arm64 directory name.'
   fi
   [[ "$PACKAGE_ARCH" == "$HOST_ARCH" ]] || fail "release package architecture is $PACKAGE_ARCH but this host is $HOST_ARCH. Download the matching Linux asset."
+  [[ -x "$SOURCE/pqtunnel-pki" ]] || fail 'release bundle is missing pqtunnel-pki.'
   BIN_SOURCE="$SOURCE/pqtunneld"
 else
   fail '--source must contain go.mod (source checkout) or pqtunneld (Linux release bundle).'
 fi
-
-# Use the repository's Go-native X.509 verifier. OpenSSL 3.0, shipped by
-# Ubuntu 24.04, does not understand ML-DSA certificates.
-if [[ -n "$PKI_BIN" ]]; then
-  [[ -f "$PKI_BIN" && -x "$PKI_BIN" ]] || fail 'PQTUNNEL_PKI_BIN must point to an executable pqtunnel-pki binary.'
-elif [[ -f "$SOURCE/go.mod" ]]; then
-  TMPPKI="$(mktemp)"
-  (cd "$SOURCE" && GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$TMPPKI" ./cmd/pqtunnel-pki)
-  PKI_BIN="$TMPPKI"
-elif [[ -x "$SOURCE/pqtunnel-pki" ]]; then
-  PKI_BIN="$SOURCE/pqtunnel-pki"
-else
-  fail 'source/release bundle must include cmd/pqtunnel-pki or executable pqtunnel-pki for ML-DSA validation.'
-fi
-"$PKI_BIN" verify --purpose server --cert "$PKI/server.crt" --key "$PKI/server.key" --ca "$PKI/ca.crt"
 
 install -d -o root -g root -m 0750 /etc/pqtunnel /etc/pqtunnel/pki /var/lib/pqtunnel
 install -o root -g root -m 0755 "$BIN_SOURCE" /usr/local/sbin/pqtunneld
