@@ -61,7 +61,7 @@ func TestMobileFleetLoginDashboardAndInvite(t *testing.T) {
 			},
 		},
 	}
-	h, err := New(loginToken, coordinator, "http://198.51.100.10:6100/"+strings.Repeat("b", 64), installRef)
+	h, err := New(loginToken, coordinator, "https://control.example.test:6100/"+strings.Repeat("b", 64), installRef)
 	if err != nil { t.Fatal(err) }
 
 	loginValues := url.Values{"token": {loginToken}}
@@ -105,7 +105,7 @@ func TestMobileFleetLoginDashboardAndInvite(t *testing.T) {
 func TestMobileFleetRejectsCrossOriginActions(t *testing.T) {
 	const loginToken = "fleet-panel-login-token-with-at-least-32-bytes"
 	coordinator := &fakeCoordinator{snapshot: fleet.DashboardSnapshot{Gateway: adminapi.ManagerSnapshot{Role: "gateway"}}}
-	h, err := New(loginToken, coordinator, "http://198.51.100.10:6100/"+strings.Repeat("c", 64), strings.Repeat("d", 40))
+	h, err := New(loginToken, coordinator, "https://control.example.test:6100/"+strings.Repeat("c", 64), strings.Repeat("d", 40))
 	if err != nil { t.Fatal(err) }
 	loginValues := url.Values{"token": {loginToken}}
 	loginReq := httptest.NewRequest(http.MethodPost, "http://198.51.100.10:6100/login", strings.NewReader(loginValues.Encode()))
@@ -144,7 +144,7 @@ func TestMobileFleetDisplaysGatewayOperationAndConfigurationErrors(t *testing.T)
 		},
 		executeResult: fleet.CommandResult{Success: false, Message: "systemd restart failed"},
 	}
-	h, err := New(loginToken, coordinator, "http://198.51.100.10:6100/"+strings.Repeat("b", 64), strings.Repeat("d", 40))
+	h, err := New(loginToken, coordinator, "https://control.example.test:6100/"+strings.Repeat("b", 64), strings.Repeat("d", 40))
 	if err != nil {
 		t.Fatal(err)
 	}

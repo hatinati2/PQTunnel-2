@@ -65,7 +65,8 @@ class ControlPlaneInstallerTests(unittest.TestCase):
         self.assertNotIn("PQTUNNEL_MANAGER_PUBLIC_URL=http://", manager)
 
     def test_no_static_ip_or_secret_is_embedded(self) -> None:
-        self.assertNotRegex(self.script, r"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])")
+        embedded_ipv4 = re.findall(r"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])", self.script)
+        self.assertEqual([ip for ip in embedded_ipv4 if ip != "0.0.0.0"], [])
         self.assertNotIn("-----BEGIN PRIVATE KEY-----", self.script)
 
 

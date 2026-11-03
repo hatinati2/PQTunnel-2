@@ -146,6 +146,9 @@ func validPublicTLSHost(host string) bool {
 	if host == "" || len(host) > 253 {
 		return false
 	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return false
+	}
 	labels := strings.Split(host, ".")
 	if len(labels) < 2 {
 		return false
