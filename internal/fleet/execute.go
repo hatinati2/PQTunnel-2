@@ -2,7 +2,6 @@ package fleet
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/hatinati2/PQTunnel-2/internal/adminapi"
