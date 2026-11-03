@@ -52,7 +52,6 @@ func createPolicyTestCert(t *testing.T, ca *x509.Certificate, caKey *mldsa.Priva
 	t.Helper()
 	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil { t.Fatal(err) }
-	pub := key.PublicKey()
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		SignatureAlgorithm: x509.MLDSA65,
@@ -110,6 +109,45 @@ func policyTestIPv4Packet(src, dst string) []byte {
 	copy(p[12:16], s[:])
 	copy(p[16:20], d[:])
 	return p
+}
+
+
+func TestTLSKeyExchangeModeMismatchFailsClosed(t *testing.T) {
+	ca, caKey, roots := createPolicyTestCA(t)
+	serverCert := createPolicyTestCert(t, ca, caKey, "gateway", "gateway.example.test", x509.ExtKeyUsageServerAuth)
+	clientCert := createPolicyTestCert(t, ca, caKey, "peer", "", x509.ExtKeyUsageClientAuth)
+
+	serverConfig, err := ServerTLSConfigForMode(serverCert, roots, TLSKeyExchangePurePQ)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConfig, err := TLS13ConfigForMode(TLSKeyExchangeHybrid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConfig.RootCAs = roots
+	clientConfig.ServerName = "gateway.example.test"
+	clientConfig.Certificates = []tls.Certificate{clientCert}
+
+	clientRaw, serverRaw := net.Pipe()
+	defer clientRaw.Close()
+	defer serverRaw.Close()
+	clientConn := tls.Client(clientRaw, clientConfig)
+	serverConn := tls.Server(serverRaw, serverConfig)
+	serverErr := make(chan error, 1)
+	go func() { serverErr <- serverConn.Handshake() }()
+
+	if err := clientConn.Handshake(); err == nil {
+		t.Fatal("hybrid client unexpectedly negotiated with a pure-PQ-only server; a fallback may have occurred")
+	}
+	select {
+	case err := <-serverErr:
+		if err == nil {
+			t.Fatal("pure-PQ-only server unexpectedly completed a handshake with a hybrid-only client")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server handshake did not terminate after the key-exchange mismatch")
+	}
 }
 
 func TestServerHandleAuthenticatesPeerAndEnforcesCIDRPolicy(t *testing.T) {
