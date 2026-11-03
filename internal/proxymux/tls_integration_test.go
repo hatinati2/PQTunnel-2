@@ -3,8 +3,7 @@ package proxymux
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -30,20 +29,21 @@ type tlsMuxFixture struct {
 func newTLSMuxFixture(t *testing.T) *tlsMuxFixture {
 	t.Helper()
 	now := time.Now()
-	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	caKey, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		t.Fatal(err)
 	}
 	caTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{CommonName: "PQTunnel test CA"},
+		SignatureAlgorithm:    x509.MLDSA65,
 		NotBefore:             now.Add(-time.Minute),
 		NotAfter:              now.Add(time.Hour),
 		IsCA:                  true,
 		BasicConstraintsValid: true,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
 	}
-	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, caKey.PublicKey(), caKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,14 +62,15 @@ func newTLSMuxFixture(t *testing.T) *tlsMuxFixture {
 	}
 }
 
-func newTLSMuxLeaf(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, now time.Time, serial int64, commonName, dnsName string, usage x509.ExtKeyUsage) tls.Certificate {
+func newTLSMuxLeaf(t *testing.T, ca *x509.Certificate, caKey *mldsa.PrivateKey, now time.Time, serial int64, commonName, dnsName string, usage x509.ExtKeyUsage) tls.Certificate {
 	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		t.Fatal(err)
 	}
 	template := &x509.Certificate{
 		SerialNumber:          big.NewInt(serial),
+		SignatureAlgorithm:    x509.MLDSA65,
 		Subject:               pkix.Name{CommonName: commonName},
 		NotBefore:             now.Add(-time.Minute),
 		NotAfter:              now.Add(time.Hour),
@@ -80,7 +81,7 @@ func newTLSMuxLeaf(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, 
 	if dnsName != "" {
 		template.DNSNames = []string{dnsName}
 	}
-	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)
+	der, err := x509.CreateCertificate(rand.Reader, template, ca, key.PublicKey(), caKey)
 	if err != nil {
 		t.Fatal(err)
 	}
