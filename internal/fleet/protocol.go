@@ -64,11 +64,12 @@ type Command struct {
 }
 
 type CommandResult struct {
-	ID      string `json:"id"`
-	Success bool   `json:"success"`
-	Message string `json:"message,omitempty"`
-	Logs    string `json:"logs,omitempty"`
-	Bundle  []byte `json:"bundle,omitempty"`
+	ID          string                       `json:"id"`
+	Success     bool                         `json:"success"`
+	Message     string                       `json:"message,omitempty"`
+	Logs        string                       `json:"logs,omitempty"`
+	Bundle      []byte                       `json:"bundle,omitempty"`
+	SetupStatus *adminapi.NodeSetupStatus    `json:"setup_status,omitempty"`
 }
 
 type NodeSnapshot struct {
