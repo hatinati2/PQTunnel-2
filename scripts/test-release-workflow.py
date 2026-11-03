@@ -74,12 +74,13 @@ class ReleaseProxyWorkflowTests(unittest.TestCase):
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
         installer = (ROOT / "install.sh").read_text(encoding="utf-8")
         setup_script = (ROOT / "scripts" / "pqtunnel-site-to-site-setup.sh").read_text(encoding="utf-8")
-        self.assertIn("**Version:** 0.4.0-pqalpha.1", readme)
-        self.assertIn("**نسخه: 0.3.0-rc9", readme_fa)
-        self.assertEqual(changelog.splitlines()[:3], ["# Changelog", "", "## 0.3.0-rc9"])
-        self.assertIn('VERSION="v0.3.0-rc9"', installer)
-        self.assertIn('VERSION="${PQTUNNEL_SETUP_VERSION:-v0.3.0-rc9}"', setup_script)
-
+        version = "0.4.0-pqalpha.1"
+        self.assertIn(f"**Version:** {version}", readme)
+        self.assertIn(f"**نسخه: {version}", readme_fa)
+        self.assertEqual(changelog.splitlines()[:3], ["# Changelog", "", f"## {version}"])
+        self.assertIn(f'VERSION="v{version}"', installer)
+        self.assertIn('VERSION="${PQTUNNEL_SETUP_VERSION:-v0.4.0-pqalpha.1}"', setup_script)
+        self.assertIn('REPO="hatinati2/PQTunnel-2"', installer)
     def test_release_workflow_uses_the_verified_bundle_builder(self) -> None:
         build_step = 'bash scripts/build-release-bundles.sh "$RELEASE_TAG" dist'
         self.assertIn(build_step, self.workflow)
