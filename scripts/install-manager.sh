@@ -47,6 +47,10 @@ done
 [[ $EUID -eq 0 ]] || fail 'run with sudo on the destination Linux server.'
 [[ -n "$SOURCE" && -d "$SOURCE" ]] || fail '--source must point to a source tree or extracted Linux release bundle.'
 [[ "$ROLE" == gateway || "$ROLE" == dialer ]] || fail '--role must be gateway or dialer.'
+INSTALL_REF="${PQTUNNEL_MANAGER_INSTALL_REF:-}"
+if [[ -n "$INSTALL_REF" && ! "$INSTALL_REF" =~ ^[0-9a-f]{40}$ ]]; then
+  fail 'PQTUNNEL_MANAGER_INSTALL_REF must be a reviewed lowercase 40-character commit SHA.'
+fi
 if (( PUBLIC_HTTP )); then
   [[ -n "$PUBLIC_HOST" ]] || fail '--public-http requires --public-host with the server public IP.'
   command -v python3 >/dev/null || fail 'python3 is required to validate the public IP.'
@@ -232,7 +236,7 @@ fi
 if (( UPGRADE )); then
   config_tmp="$(mktemp /etc/default/pqtunnel-manager.XXXXXX)"
   old_endpoint_mode="$(sed -n 's/^PQTUNNEL_MANAGER_ENDPOINT_MODE=//p' /etc/default/pqtunnel-manager | head -n1)"
-  awk '!/^(PQTUNNEL_SETUP_VERSION|PQTUNNEL_MANAGER_LISTEN|PQTUNNEL_MANAGER_TOKEN|PQTUNNEL_MANAGER_PATH_TOKEN|PQTUNNEL_MANAGER_PUBLIC_HOST|PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP|PQTUNNEL_MANAGER_TLS_CERT|PQTUNNEL_MANAGER_TLS_KEY|PQTUNNEL_MANAGER_ENDPOINT_MODE)=/' /etc/default/pqtunnel-manager > "$config_tmp"
+  awk '!/^(PQTUNNEL_SETUP_VERSION|PQTUNNEL_MANAGER_LISTEN|PQTUNNEL_MANAGER_TOKEN|PQTUNNEL_MANAGER_PATH_TOKEN|PQTUNNEL_MANAGER_PUBLIC_URL|PQTUNNEL_MANAGER_INSTALL_REF|PQTUNNEL_MANAGER_PUBLIC_HOST|PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP|PQTUNNEL_MANAGER_TLS_CERT|PQTUNNEL_MANAGER_TLS_KEY|PQTUNNEL_MANAGER_ENDPOINT_MODE)=/' /etc/default/pqtunnel-manager > "$config_tmp"
   old_listen="$(sed -n 's/^PQTUNNEL_MANAGER_LISTEN=//p' /etc/default/pqtunnel-manager | head -n1)"
   old_insecure="$(sed -n 's/^PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=//p' /etc/default/pqtunnel-manager | head -n1)"
   old_token="$(sed -n 's/^PQTUNNEL_MANAGER_TOKEN=//p' /etc/default/pqtunnel-manager | head -n1)"
@@ -248,7 +252,13 @@ if (( UPGRADE )); then
       [[ "$NEW_MANAGER_PATH_TOKEN" =~ ^[0-9a-f]{64}$ ]] || fail 'could not generate a secret panel path; upgrade stopped.'
       old_path_token="$NEW_MANAGER_PATH_TOKEN"
     fi
-    printf 'PQTUNNEL_MANAGER_LISTEN=0.0.0.0:%s\nPQTUNNEL_MANAGER_PUBLIC_HOST=%s\nPQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true\nPQTUNNEL_MANAGER_TOKEN=%s\nPQTUNNEL_MANAGER_PATH_TOKEN=%s\n' "$PANEL_PORT" "$PUBLIC_HOST" "$old_token" "$old_path_token" >> "$config_tmp"
+    printf 'PQTUNNEL_MANAGER_LISTEN=0.0.0.0:%s\nPQTUNNEL_MANAGER_PUBLIC_HOST=%s\nPQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true\nPQTUNNEL_MANAGER_TOKEN=%s\nPQTUNNEL_MANAGER_PATH_TOKEN=%s\nPQTUNNEL_MANAGER_PUBLIC_URL=http://%s:%s/%s\n' "$PANEL_PORT" "$PUBLIC_HOST" "$old_token" "$old_path_token" "$PUBLIC_HOST" "$PANEL_PORT" "$old_path_token" >> "$config_tmp"
+    effective_install_ref="$INSTALL_REF"
+    if [[ -z "$effective_install_ref" ]]; then effective_install_ref="$(sed -n 's/^PQTUNNEL_MANAGER_INSTALL_REF=//p' /etc/default/pqtunnel-manager | head -n1)"; fi
+    if [[ -n "$effective_install_ref" ]]; then
+      [[ "$effective_install_ref" =~ ^[0-9a-f]{40}$ ]] || fail 'stored manager install ref is invalid.'
+      printf 'PQTUNNEL_MANAGER_INSTALL_REF=%s\n' "$effective_install_ref" >> "$config_tmp"
+    fi
   elif [[ "$old_insecure" == true || ! "$old_listen" =~ ^(127\.0\.0\.1:[0-9]+|\[::1\]:[0-9]+)$ ]]; then
     NEW_MANAGER_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
     [[ "$NEW_MANAGER_TOKEN" =~ ^[0-9a-f]{64}$ ]] || fail 'could not generate a replacement manager token; upgrade stopped.'
@@ -273,7 +283,8 @@ ENV
   if (( PUBLIC_HTTP )); then
     NEW_MANAGER_PATH_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
     [[ "$NEW_MANAGER_PATH_TOKEN" =~ ^[0-9a-f]{64}$ ]] || fail 'could not generate a secret panel path; installation stopped.'
-    printf 'PQTUNNEL_MANAGER_LISTEN=0.0.0.0:%s\nPQTUNNEL_MANAGER_PUBLIC_HOST=%s\nPQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true\nPQTUNNEL_MANAGER_PATH_TOKEN=%s\n' "$PANEL_PORT" "$PUBLIC_HOST" "$NEW_MANAGER_PATH_TOKEN" >> /etc/default/pqtunnel-manager
+    printf 'PQTUNNEL_MANAGER_LISTEN=0.0.0.0:%s\nPQTUNNEL_MANAGER_PUBLIC_HOST=%s\nPQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true\nPQTUNNEL_MANAGER_PATH_TOKEN=%s\nPQTUNNEL_MANAGER_PUBLIC_URL=http://%s:%s/%s\n' "$PANEL_PORT" "$PUBLIC_HOST" "$NEW_MANAGER_PATH_TOKEN" "$PUBLIC_HOST" "$PANEL_PORT" "$NEW_MANAGER_PATH_TOKEN" >> /etc/default/pqtunnel-manager
+    if [[ -n "$INSTALL_REF" ]]; then printf 'PQTUNNEL_MANAGER_INSTALL_REF=%s\n' "$INSTALL_REF" >> /etc/default/pqtunnel-manager; fi
   else
     printf 'PQTUNNEL_MANAGER_LISTEN=127.0.0.1:9091\n' >> /etc/default/pqtunnel-manager
   fi
