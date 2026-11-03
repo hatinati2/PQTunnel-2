@@ -72,6 +72,10 @@ func WithPathToken(token string, next http.Handler) (http.Handler, error) {
 			}
 		}
 
+		// Never disclose the secret path in a Referer header when the page
+		// navigates to an external origin.
+		w.Header().Set("Referrer-Policy", "no-referrer")
+
 		body := recorder.Body.Bytes()
 		if strings.HasPrefix(strings.ToLower(recorder.Header().Get("Content-Type")), "text/html") {
 			html := string(body)
