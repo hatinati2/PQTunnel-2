@@ -68,14 +68,14 @@ func main() {
 	}
 	cert, err := tls.LoadX509KeyPair(*tlsCert, *tlsKey)
 	fatalIf(err)
-	tlsConfig, err := tunnel.ServerTLSConfigForMode(cert, pool, tunnel.TLSKeyExchangeMode(*tlsKEX))
-	fatalIf(err)
 	caPEM, err := os.ReadFile(*clientCA)
 	fatalIf(err)
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
 		fatalIf(fmt.Errorf("invalid client CA PEM"))
 	}
+	tlsConfig, err := tunnel.ServerTLSConfigForMode(cert, pool, tunnel.TLSKeyExchangeMode(*tlsKEX))
+	fatalIf(err)
 	dev, err := tun.Open(*tunName)
 	fatalIf(err)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -110,7 +110,7 @@ func main() {
 		}()
 		fmt.Printf("PQTunnel admin panel available at http://%s/ (loopback-only; token protected)\n", *adminListen)
 	}
-	fmt.Printf("PQTunnel listening on %s; TLS 1.3 %s key exchange with strict ML-DSA-65 authentication; IPv4/IPv6 packets; route policy configured separately\n", *listen)
+	fmt.Printf("PQTunnel listening on %s; TLS 1.3 %s key exchange with strict ML-DSA-65 authentication; IPv4/IPv6 packets; route policy configured separately\n", *listen, *tlsKEX)
 	if err := s.Serve(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		fatalIf(err)
 	}
