@@ -34,7 +34,11 @@ func main() {
 	keyFile := os.Getenv("PQTUNNEL_MANAGER_TLS_KEY")
 	isLoopback := adminui.ValidateLoopbackAddress(listen) == nil
 	allowInsecurePublicHTTP := strings.EqualFold(os.Getenv("PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP"), "true")
+	pathToken := os.Getenv("PQTUNNEL_MANAGER_PATH_TOKEN")
 	if !isLoopback {
+		if pathToken == "" {
+			fatalIf(fmt.Errorf("public manager listeners require a per-install PQTUNNEL_MANAGER_PATH_TOKEN; use 32 random bytes encoded as 64 lowercase hexadecimal characters"))
+		}
 		if allowInsecurePublicHTTP {
 			fatalIf(validatePublicHTTPListener(listen, publicHost))
 		} else {
@@ -61,6 +65,11 @@ func main() {
 	fatalIf(err)
 	handler, err := adminui.NewWithPublicAccess(token, controller, publicHost, allowInsecurePublicHTTP)
 	fatalIf(err)
+	var panelHandler http.Handler = handler
+	if pathToken != "" {
+		panelHandler, err = adminui.WithPathToken(pathToken, handler)
+		fatalIf(err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -84,7 +93,7 @@ func main() {
 	listener, err := net.Listen("tcp", listen)
 	fatalIf(err)
 	server := &http.Server{
-		Addr: listen, Handler: handler,
+		Addr: listen, Handler: panelHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 15 * time.Second,
 		WriteTimeout: 310 * time.Second,
