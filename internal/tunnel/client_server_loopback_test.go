@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/portpolicy"
-	"github.com/hatinati2/PQTunnel/internal/prefixset"
-	"github.com/hatinati2/PQTunnel/internal/protocol"
+	"github.com/hatinati2/PQTunnel-2/internal/portpolicy"
+	"github.com/hatinati2/PQTunnel-2/internal/prefixset"
+	"github.com/hatinati2/PQTunnel-2/internal/protocol"
 )
 
 type loopbackTunnelDevice struct {
