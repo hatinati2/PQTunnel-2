@@ -17,9 +17,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/adminui"
-	"github.com/hatinati2/PQTunnel/internal/manager"
-	"github.com/hatinati2/PQTunnel/internal/speedtest"
+	"github.com/hatinati2/PQTunnel-2/internal/adminui"
+	"github.com/hatinati2/PQTunnel-2/internal/manager"
+	"github.com/hatinati2/PQTunnel-2/internal/speedtest"
 )
 
 func main() {
