@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/mldsa"
+	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
