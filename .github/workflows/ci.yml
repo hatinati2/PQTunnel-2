@@ -127,6 +127,8 @@ jobs:
         run: python3 scripts/test-release-workflow.py
       - name: Test one-line installer release pin and token handoff
         run: python3 scripts/test-one-line-installer.py
+      - name: Test mobile control-plane installer contract
+        run: python3 scripts/test-control-plane-installer.py
       - name: Install nftables parser for check-only regression test
         run: |
           sudo apt-get update
