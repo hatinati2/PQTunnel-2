@@ -24,8 +24,12 @@ class ControlPlaneInstallerTests(unittest.TestCase):
         self.assertIn("mutable branch names are refused", self.script)
 
     def test_gateway_and_dialer_have_distinct_explicit_arguments(self) -> None:
-        self.assertIn('--public-host YOUR_PUBLIC_IPV4 --panel-port 6100', self.script)
+        self.assertIn('--panel-domain control.example.com --panel-port 6100', self.script)
         self.assertIn('--control-url', self.script)
+        self.assertIn('certbot certonly --standalone', self.script)
+        self.assertIn('--public-tls --public-host "$PANEL_DOMAIN"', self.script)
+        self.assertIn('TCP/80 for ACME renewal', self.script)
+        self.assertIn('[[ "$CONTROL_URL" == https://* ]]', self.script)
         self.assertIn('--pair-token', self.script)
         self.assertIn('--role gateway', self.script)
         self.assertIn('--role dialer', self.script)
@@ -47,6 +51,14 @@ class ControlPlaneInstallerTests(unittest.TestCase):
             self.doc,
             re.compile(r'curl -fsSL https://raw\.githubusercontent\.com/hatinati2/PQTunnel-2/COMMIT_SHA/scripts/pqtunnel-control-install\.sh \| sudo bash -s -- --ref COMMIT_SHA --role gateway --public-host YOUR_PUBLIC_IPV4 --panel-port 6100')
         )
+
+    def test_manager_installer_refuses_public_plaintext_http(self) -> None:
+        manager = (ROOT / "scripts/install-manager.sh").read_text(encoding="utf-8")
+        self.assertIn("--public-tls", manager)
+        self.assertIn("--tls-cert", manager)
+        self.assertIn("--tls-key", manager)
+        self.assertNotIn("PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true", manager)
+        self.assertNotIn("PQTUNNEL_MANAGER_PUBLIC_URL=http://", manager)
 
     def test_no_static_ip_or_secret_is_embedded(self) -> None:
         self.assertNotRegex(self.script, r"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])")
