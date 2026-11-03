@@ -43,6 +43,11 @@ fi
 HELP="$(bash "$PREFLIGHT" --help)"
 grep -q 'READ-ONLY' <<< "$HELP"
 grep -q 'check_certificate_bundle' "$PREFLIGHT"
+grep -q 'pqtunnel-pki' "$PREFLIGHT"
+if grep -Eq 'openssl (x509|verify|pkey)' "$PREFLIGHT"; then
+  echo "preflight must not use OpenSSL to parse ML-DSA certificates" >&2
+  exit 1
+fi
 grep -q 'PQTUNNEL_PREFLIGHT_PKI_DIR' <<< "$HELP"
 grep -q 'dialer-ca.crt' "$PREFLIGHT"
 grep -q 'nftables query failed' "$PREFLIGHT"
@@ -163,59 +168,61 @@ grep -q 'ipv4_rp_filter_all=1 (strict reverse-path filtering' <<< "$STRICT_OUTPU
 grep -q 'rp_filter_interface=lo configured=0 effective=1 mode=strict' <<< "$STRICT_OUTPUT"
 echo 'PASS: preflight distinguishes strict and loose rp_filter modes and reports effective interface values.'
 
-# Generate isolated certificate fixtures. The server CA intentionally differs
-# from the peer/client issuing CA, matching legacy Dialer deployments.
-make_test_ca() {
-  local dir="$1" name="$2"
-  openssl req -x509 -newkey rsa:2048 -nodes \
-    -keyout "$dir/$name.key" -out "$dir/$name.crt" -days 2 \
-    -subj "/CN=$name" \
-    -addext 'basicConstraints=critical,CA:TRUE' \
-    -addext 'keyUsage=critical,keyCertSign,cRLSign' >/dev/null 2>&1
-}
-issue_test_client() {
-  local dir="$1" issuer="$2"
-  openssl req -new -newkey rsa:2048 -nodes \
-    -keyout "$dir/client.key" -out "$dir/client.csr" \
-    -subj '/CN=fixture-client' >/dev/null 2>&1
-  cat >"$dir/client.ext" <<'EXT'
-basicConstraints=critical,CA:FALSE
-keyUsage=critical,digitalSignature
-extendedKeyUsage=clientAuth
-EXT
-  openssl x509 -req -in "$dir/client.csr" \
-    -CA "$dir/$issuer.crt" -CAkey "$dir/$issuer.key" -CAcreateserial \
-    -out "$dir/client.crt" -days 2 -sha256 -extfile "$dir/client.ext" >/dev/null 2>&1
-  chmod 0600 "$dir/client.key"
-}
+# Generate ML-DSA fixtures with the same Go-native PKI tool used by the runtime.
+PKI_BIN="$TMP_CONFIG_DIR/pqtunnel-pki"
+GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -o "$PKI_BIN" "$ROOT/cmd/pqtunnel-pki"
+
 FIXTURE_PKI="$TMP_CONFIG_DIR/pki-dedicated"
-mkdir -m 0700 "$FIXTURE_PKI"
-make_test_ca "$FIXTURE_PKI" server-ca
-make_test_ca "$FIXTURE_PKI" dialer-ca
-cp "$FIXTURE_PKI/server-ca.crt" "$FIXTURE_PKI/ca.crt"
-issue_test_client "$FIXTURE_PKI" dialer-ca
-DEDICATED_CA_OUTPUT="$(PQTUNNEL_PREFLIGHT_PKI_DIR="$FIXTURE_PKI" bash "$PREFLIGHT" --role dialer)"
+mkdir -m 0700 "$FIXTURE_PKI" "$FIXTURE_PKI/server-ca" "$FIXTURE_PKI/dialer-ca-work"
+"$PKI_BIN" init --server-name gateway.example.test --out "$FIXTURE_PKI/server-ca"
+"$PKI_BIN" init --server-name dialer-ca.example.test --out "$FIXTURE_PKI/dialer-ca-work"
+"$PKI_BIN" issue-client --ip 192.0.2.10 --out "$FIXTURE_PKI/dialer-ca-work"
+cp "$FIXTURE_PKI/server-ca/ca.crt" "$FIXTURE_PKI/ca.crt"
+cp "$FIXTURE_PKI/dialer-ca-work/ca.crt" "$FIXTURE_PKI/dialer-ca.crt"
+cp "$FIXTURE_PKI/dialer-ca-work/client-192_0_2_10.crt" "$FIXTURE_PKI/client.crt"
+cp "$FIXTURE_PKI/dialer-ca-work/client-192_0_2_10.key" "$FIXTURE_PKI/client.key"
+chmod 0600 "$FIXTURE_PKI/client.key"
+DEDICATED_CA_OUTPUT="$(PQTUNNEL_PKI_BIN="$PKI_BIN" PQTUNNEL_PREFLIGHT_PEER_NAME=192.0.2.10 PQTUNNEL_PREFLIGHT_PKI_DIR="$FIXTURE_PKI" bash "$PREFLIGHT" --role dialer)"
 grep -F 'client_certificate_ca=dialer-ca.crt' <<< "$DEDICATED_CA_OUTPUT"
-grep -q 'Client/peer certificate verifies against the configured CA for sslclient' <<< "$DEDICATED_CA_OUTPUT"
+grep -q 'Client/peer ML-DSA certificate chain, EKU, identity, key match and permissions verified by pqtunnel-pki.' <<< "$DEDICATED_CA_OUTPUT"
 if grep -q '^\[FAIL\]' <<< "$DEDICATED_CA_OUTPUT"; then
-  echo 'Dedicated dialer CA fixture unexpectedly failed preflight:' >&2
+  echo 'Dedicated dialer CA ML-DSA fixture unexpectedly failed preflight:' >&2
   printf '%s\n' "$DEDICATED_CA_OUTPUT" >&2
   exit 1
 fi
-echo 'PASS: dialer preflight selects and validates a separate dialer-ca.crt.'
+echo 'PASS: dialer preflight validates ML-DSA client certificates against a separate dialer-ca.crt.'
 
-# A standard single-CA release bundle must keep using ca.crt.
+# A standard single-CA ML-DSA bundle must keep using ca.crt.
 FIXTURE_SINGLE="$TMP_CONFIG_DIR/pki-single"
 mkdir -m 0700 "$FIXTURE_SINGLE"
-make_test_ca "$FIXTURE_SINGLE" ca
-issue_test_client "$FIXTURE_SINGLE" ca
-SINGLE_CA_OUTPUT="$(PQTUNNEL_PREFLIGHT_PKI_DIR="$FIXTURE_SINGLE" bash "$PREFLIGHT" --role dialer)"
+"$PKI_BIN" init --server-name gateway.example.test --out "$FIXTURE_SINGLE"
+"$PKI_BIN" issue-client --ip 192.0.2.11 --out "$FIXTURE_SINGLE"
+cp "$FIXTURE_SINGLE/client-192_0_2_11.crt" "$FIXTURE_SINGLE/client.crt"
+cp "$FIXTURE_SINGLE/client-192_0_2_11.key" "$FIXTURE_SINGLE/client.key"
+chmod 0600 "$FIXTURE_SINGLE/client.key"
+SINGLE_CA_OUTPUT="$(PQTUNNEL_PKI_BIN="$PKI_BIN" PQTUNNEL_PREFLIGHT_PEER_NAME=192.0.2.11 PQTUNNEL_PREFLIGHT_PKI_DIR="$FIXTURE_SINGLE" bash "$PREFLIGHT" --role dialer)"
 grep -F 'client_certificate_ca=ca.crt' <<< "$SINGLE_CA_OUTPUT"
-grep -q 'Client/peer certificate verifies against the configured CA for sslclient' <<< "$SINGLE_CA_OUTPUT"
+grep -q 'Client/peer ML-DSA certificate chain, EKU, identity, key match and permissions verified by pqtunnel-pki.' <<< "$SINGLE_CA_OUTPUT"
 if grep -q '^\[FAIL\]' <<< "$SINGLE_CA_OUTPUT"; then
-  echo 'Single-CA fixture unexpectedly failed preflight:' >&2
+  echo 'Single-CA ML-DSA fixture unexpectedly failed preflight:' >&2
   printf '%s\n' "$SINGLE_CA_OUTPUT" >&2
   exit 1
 fi
-echo 'PASS: dialer preflight retains compatibility with single-CA release bundles.'
+echo 'PASS: dialer preflight validates ML-DSA certificates with a single CA.'
+
+# Gateway validation must check the certificate SAN with the Go verifier.
+GATEWAY_FIXTURE="$TMP_CONFIG_DIR/pki-gateway"
+mkdir -m 0700 "$GATEWAY_FIXTURE"
+"$PKI_BIN" init --server-name gateway.example.test --out "$GATEWAY_FIXTURE"
+chmod 0600 "$GATEWAY_FIXTURE/server.key"
+GATEWAY_OUTPUT="$(PQTUNNEL_PKI_BIN="$PKI_BIN" PQTUNNEL_PREFLIGHT_SERVER_NAME=gateway.example.test PQTUNNEL_PREFLIGHT_PKI_DIR="$GATEWAY_FIXTURE" bash "$PREFLIGHT" --role gateway)"
+grep -q 'Server ML-DSA certificate chain, EKU, identity, key match and permissions verified by pqtunnel-pki.' <<< "$GATEWAY_OUTPUT"
+if grep -q '^\[FAIL\]' <<< "$GATEWAY_OUTPUT"; then
+  echo 'Gateway ML-DSA fixture unexpectedly failed preflight:' >&2
+  printf '%s\n' "$GATEWAY_OUTPUT" >&2
+  exit 1
+fi
+WRONG_NAME_OUTPUT="$(PQTUNNEL_PKI_BIN="$PKI_BIN" PQTUNNEL_PREFLIGHT_SERVER_NAME=wrong.example.test PQTUNNEL_PREFLIGHT_PKI_DIR="$GATEWAY_FIXTURE" bash "$PREFLIGHT" --role gateway || true)"
+grep -q '^\[FAIL\] Server ML-DSA certificate/key/chain validation failed with Go pqtunnel-pki\.' <<< "$WRONG_NAME_OUTPUT"
+echo 'PASS: gateway preflight verifies ML-DSA certificate SAN and rejects a wrong server name.'
 echo 'PASS: read-only preflight entry points and non-mutating guard verified.'
