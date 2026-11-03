@@ -14,6 +14,18 @@ grep -q 'curl -fsSL .* install-server .*--start --apply-network' <<< "$BOOTSTRAP
 grep -q 'curl -fsSL .* install-client .*--start' <<< "$BOOTSTRAP_HELP"
 grep -q 'PQTUNNEL_REF' <<< "$BOOTSTRAP_HELP"
 grep -q 'REPLACE_WITH_REVIEWED_40_CHAR_SHA' <<< "$BOOTSTRAP_HELP"
+grep -Fq 'hatinati2/PQTunnel-2' "$ROOT/scripts/pqtunnel-bootstrap.sh"
+grep -Fq 'module github.com/hatinati2/PQTunnel-2' "$ROOT/scripts/pqtunnel-bootstrap.sh"
+if grep -Fq 'hatinati2/PQTunnel/' "$ROOT/scripts/pqtunnel-bootstrap.sh"; then
+  echo "bootstrap still references the original PQTunnel repository" >&2
+  exit 1
+fi
+if grep -Eq 'openssl (x509|verify|pkey)' "$ROOT/scripts/pqtunnel-bootstrap.sh"; then
+  echo "bootstrap must use Go-native PKI verification for ML-DSA certificates" >&2
+  exit 1
+fi
+grep -q 'verify --purpose client' "$ROOT/scripts/pqtunnel-bootstrap.sh"
+grep -q 'build_pki_verifier' "$ROOT/scripts/pqtunnel-bootstrap.sh"
 if PQTUNNEL_REF=main bash "$ROOT/scripts/pqtunnel-bootstrap.sh" install-server >/dev/null 2>&1; then
   echo "install-server unexpectedly accepted a mutable source ref" >&2
   exit 1
