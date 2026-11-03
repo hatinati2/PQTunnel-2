@@ -202,14 +202,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost { methodNotAllowed(w, "POST"); return }
 		id, current, ok := h.requirePost(w, r)
 		if !ok { return }
-		if !h.validCSRF(r, current) { http.Error(w, "invalid request", http.StatusForbidden); return }
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		if err := r.ParseForm(); err != nil || !h.validCSRF(r, current) { http.Error(w, "invalid request", http.StatusForbidden); return }
 		h.mu.Lock(); delete(h.sessions, id); h.mu.Unlock()
 		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	case "/invite":
 		if r.Method != http.MethodPost { methodNotAllowed(w, "POST"); return }
 		_, current, ok := h.requirePost(w, r); if !ok { return }
-		if !h.validCSRF(r, current) { http.Error(w, "invalid request", http.StatusForbidden); return }
+		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		if err := r.ParseForm(); err != nil || !h.validCSRF(r, current) { http.Error(w, "invalid request", http.StatusForbidden); return }
 		token, expires, err := h.coordinator.CreateInvite()
 		if err != nil { h.renderDashboard(w, r, current.CSRF, "", err.Error(), nil, "", ""); return }
 		command, err := h.dialerInstallCommand(token)
