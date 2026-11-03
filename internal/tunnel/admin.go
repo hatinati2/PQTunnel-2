@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/adminapi"
+	"github.com/hatinati2/PQTunnel-2/internal/adminapi"
 )
 
 // AdminSnapshot returns only operational metadata needed by the loopback panel.
