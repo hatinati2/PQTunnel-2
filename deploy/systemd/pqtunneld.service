@@ -1,8 +1,8 @@
 [Unit]
-Description=PQTunnel hybrid post-quantum tunnel server (experimental)
+Description=PQTunnel-2 ML-DSA post-quantum tunnel server (experimental)
 Wants=network-online.target
 After=network-online.target
-Documentation=https://github.com/hatinati2/PQTunnel
+Documentation=https://github.com/hatinati2/PQTunnel-2
 
 [Service]
 Type=simple
