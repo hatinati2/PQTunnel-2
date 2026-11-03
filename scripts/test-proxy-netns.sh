@@ -5,11 +5,12 @@ set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 [[ $EUID -eq 0 ]] || { echo 'FAIL: run as root on a disposable Linux host' >&2; exit 2; }
-for cmd in ip nft iptables-save ip6tables-save openssl python3 ss diff sed grep go; do
+for cmd in ip nft iptables-save ip6tables-save python3 ss diff sed grep go; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "FAIL: required command missing: $cmd" >&2; exit 2; }
 done
 
 BIN="${PQTUNNEL_PROXY_BIN:-}"
+PKI_BIN="${PQTUNNEL_PKI_BIN:-}"
 LAB_DIR="$(mktemp -d -t pqtunnel-proxy-lab.XXXXXX)"
 SUFFIX="${BASHPID}"
 GW_NS="ptgw${SUFFIX}"
@@ -142,29 +143,20 @@ if [[ -z "$BIN" ]]; then
   go build -trimpath -o "$BIN" ./cmd/pqtunnel-proxy
 fi
 [[ -x "$BIN" ]] || fail "proxy binary is not executable: $BIN"
+if [[ -z "$PKI_BIN" ]]; then
+  PKI_BIN="$LAB_DIR/pqtunnel-pki"
+  go build -trimpath -o "$PKI_BIN" ./cmd/pqtunnel-pki
+fi
+[[ -x "$PKI_BIN" ]] || fail "PKI binary is not executable: $PKI_BIN"
 
-# Ephemeral identities only; no production certificates are read or written.
+# Ephemeral identities only; generated ML-DSA-65 keys stay inside this disposable lab.
 mkdir -m 0700 "$LAB_DIR/pki"
-openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$LAB_DIR/pki/ca.key" >/dev/null 2>&1
-openssl req -x509 -new -key "$LAB_DIR/pki/ca.key" -sha256 -days 1 -subj '/CN=PQTunnel Disposable Lab CA' -out "$LAB_DIR/pki/ca.crt" >/dev/null 2>&1
-chmod 0600 "$LAB_DIR/pki/ca.key"
-openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$LAB_DIR/pki/gateway.key" >/dev/null 2>&1
-openssl req -new -key "$LAB_DIR/pki/gateway.key" -subj '/CN=gateway.test' -out "$LAB_DIR/pki/gateway.csr" >/dev/null 2>&1
-cat > "$LAB_DIR/pki/gateway.ext" <<'EOF'
-basicConstraints=critical,CA:FALSE
-keyUsage=critical,digitalSignature
-extendedKeyUsage=serverAuth
-subjectAltName=DNS:gateway.test
-EOF
-openssl x509 -req -in "$LAB_DIR/pki/gateway.csr" -CA "$LAB_DIR/pki/ca.crt" -CAkey "$LAB_DIR/pki/ca.key" -CAcreateserial -days 1 -sha256 -extfile "$LAB_DIR/pki/gateway.ext" -out "$LAB_DIR/pki/gateway.crt" >/dev/null 2>&1
-openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$LAB_DIR/pki/dialer.key" >/dev/null 2>&1
-openssl req -new -key "$LAB_DIR/pki/dialer.key" -subj '/CN=dialer.test' -out "$LAB_DIR/pki/dialer.csr" >/dev/null 2>&1
-cat > "$LAB_DIR/pki/dialer.ext" <<'EOF'
-basicConstraints=critical,CA:FALSE
-keyUsage=critical,digitalSignature
-extendedKeyUsage=clientAuth
-EOF
-openssl x509 -req -in "$LAB_DIR/pki/dialer.csr" -CA "$LAB_DIR/pki/ca.crt" -CAkey "$LAB_DIR/pki/ca.key" -CAcreateserial -days 1 -sha256 -extfile "$LAB_DIR/pki/dialer.ext" -out "$LAB_DIR/pki/dialer.crt" >/dev/null 2>&1
+"$PKI_BIN" init --out "$LAB_DIR/pki" --server-name gateway.test
+"$PKI_BIN" issue-peer --out "$LAB_DIR/pki" --name dialer.test
+mv "$LAB_DIR/pki/server.crt" "$LAB_DIR/pki/gateway.crt"
+mv "$LAB_DIR/pki/server.key" "$LAB_DIR/pki/gateway.key"
+mv "$LAB_DIR/pki/peer-dialer.test.crt" "$LAB_DIR/pki/dialer.crt"
+mv "$LAB_DIR/pki/peer-dialer.test.key" "$LAB_DIR/pki/dialer.key"
 chmod 0600 "$LAB_DIR/pki/gateway.key" "$LAB_DIR/pki/dialer.key"
 
 # Gateway-side fake public IP is local only; both namespaces have no default
@@ -545,6 +537,7 @@ start_gateway() {
     PQTUNNEL_PROXY_CERT="$LAB_DIR/pki/gateway.crt" \
     PQTUNNEL_PROXY_KEY="$LAB_DIR/pki/gateway.key" \
     PQTUNNEL_PROXY_PEER_NAME=dialer.test \
+    PQTUNNEL_PROXY_TLS_KEX=hybrid \
     PQTUNNEL_PROXY_DIRECT_ALLOWED_PORTS=18444,18446 \
     PQTUNNEL_PROXY_REVERSE_LISTENERS=app=192.0.2.1:18080,speed=192.0.2.1:18082 \
     PQTUNNEL_PROXY_MAX_STREAMS=32 \
@@ -556,6 +549,7 @@ start_dialer() {
     PQTUNNEL_PROXY_ROLE=dialer \
     PQTUNNEL_PROXY_SERVER=192.0.2.1:18443 \
     PQTUNNEL_PROXY_SERVER_NAME=gateway.test \
+    PQTUNNEL_PROXY_TLS_KEX=hybrid \
     PQTUNNEL_PROXY_CA="$LAB_DIR/pki/ca.crt" \
     PQTUNNEL_PROXY_CERT="$LAB_DIR/pki/dialer.crt" \
     PQTUNNEL_PROXY_KEY="$LAB_DIR/pki/dialer.key" \
