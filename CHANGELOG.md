@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0-pqalpha.1
+
+- Created the separate PQTunnel 2 development line and imported the canonical root source tree; the stale nested legacy copy is not included.
+- Renamed the Go module to `github.com/hatinati2/PQTunnel-2` and set Go 1.27 as the minimum toolchain.
+- Replaced generated Ed25519 CA, server, client, and peer keys/certificates with ML-DSA-65 and added strict verified-chain enforcement.
+- Added selectable TLS 1.3 `hybrid` (`X25519MLKEM768`) and experimental `pure-pq` (`MLKEM1024`) key-exchange modes with no classical-group fallback.
+- Converted PKI and proxy TLS integration fixtures to ML-DSA-65 and documented that test fixtures must never contain operator-specific endpoints or secrets.
+- This is an experimental development baseline. It has not passed the complete CI, two-host acceptance gates, or independent security audit; no stable release is published.
+
 ## 0.3.0-rc9
 
 - Fix read-only Dialer preflight to verify client certificates against a separate `dialer-ca.crt` when it actually issues the client certificate, while retaining compatibility with the shared-CA layout.
