@@ -6,7 +6,7 @@ STATE="/run/pqtunnel-linux-client.state"
 TUN_IF="pqtun0"
 SERVER_IP=""
 LOCAL_IP=""
-DNS_IP="1.1.1.1"
+DNS_IP=""
 IN_UP=0
 CREATED_TUN=0
 HOST_ROUTE=0
@@ -89,7 +89,7 @@ if [[ "$MODE" == up ]]; then
   SERVER_IP="${PQTUNNEL_SERVER_IP:-}"
   LOCAL_IP="${PQTUNNEL_LOCAL_IP:-10.66.0.2}"
   TUN_IF="${PQTUNNEL_TUN:-pqtun0}"
-  DNS_IP="${PQTUNNEL_DNS:-1.1.1.1}"
+  DNS_IP="${PQTUNNEL_DNS:-}"
   valid_ipv4 "$SERVER_IP" || fail 'PQTUNNEL_SERVER_IP must be a valid literal IPv4 address (avoid bootstrap DNS leakage)'
   valid_ipv4 "$DNS_IP" || fail 'PQTUNNEL_DNS must be a valid literal IPv4 DNS server'
   valid_ipv4 "$LOCAL_IP" || fail 'PQTUNNEL_LOCAL_IP must be a valid IPv4 address'
