@@ -11,7 +11,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -97,7 +96,10 @@ func enrollAgent(controlURL, token, configPath string) error {
 	if err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: 20 * time.Second}
+	client := &http.Client{
+		Timeout: 20 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	response, err := client.Post(base+"/agent/enroll", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("Gateway enrollment endpoint is unreachable: %w", err)
@@ -254,7 +256,10 @@ func run(ctx context.Context, cfg agentConfig) error {
 	if err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: 25 * time.Second}
+	client := &http.Client{
+		Timeout: 25 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	var lastResult *fleet.CommandResult
 	lastCommandID := ""
 	backoff := 2 * time.Second
@@ -340,4 +345,3 @@ func fatal(err error) {
 	os.Exit(1)
 }
 
-var _ = io.EOF
