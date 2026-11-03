@@ -30,7 +30,7 @@ PQTunnel 2 یک شاخهٔ مستقل و آزمایشی از پروژهٔ تون
 - حداقل Go **1.27** لازم است. Go 1.27 بستهٔ استاندارد `crypto/mldsa` و پشتیبانی ML-DSA در X.509 و TLS 1.3 را اضافه کرده است.
 - هدف MVP آزمایشی: Linux، اوبونتو 24.04/26.04 و معماری amd64/arm64.
 - فقط TLS 1.3 فعال است.
-- کلید خصوصی CA باید آفلاین و محرمانه بماند.
+- فرمان `verify` همین ابزار، زنجیرهٔ گواهی، SAN/CN، EKU، تطابق کلید، الگوریتم ML-DSA-65 و مجوز فایل کلید خصوصی را با پیاده‌سازی X.509/TLS در Go بررسی می‌کند و به نسخهٔ OpenSSL سیستم وابسته نیست؛ بنابراین با OpenSSL 3.0 پیش‌فرض اوبونتو 24.04 نیز سازگار است. کلید خصوصی CA باید آفلاین و محرمانه بماند.
 
 ## ساخت و تست
 
@@ -54,6 +54,7 @@ chmod 700 "$tmp"
 go run ./cmd/pqtunnel-pki init --out "$tmp/pki" --server-name vpn.example.test
 go run ./cmd/pqtunnel-pki issue-client --out "$tmp/pki" --ip 192.0.2.10
 go run ./cmd/pqtunnel-pki issue-peer --out "$tmp/pki" --name peer-fixture
+go run ./cmd/pqtunnel-pki verify --purpose server --cert "$tmp/pki/server.crt" --key "$tmp/pki/server.key" --ca "$tmp/pki/ca.crt" --server-name vpn.example.test
 ```
 
 آدرس کلاینت نمونه از محدودهٔ رزروشدهٔ مستندسازی است و endpoint واقعی نیست. مقادیر محیط واقعی را فقط هنگام اجرا و از طریق فایل پیکربندی محافظت‌شده وارد کن؛ IP، دامنه، پورت، توکن، رمز، گواهی یا کلید خصوصی‌ای که مدیر سیستم ارائه می‌کند نباید در کد، تست، fixture، CI، اسکرین‌شات یا لاگ ثبت شود.
