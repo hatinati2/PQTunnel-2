@@ -29,6 +29,7 @@ func main() {
 	tlsCert := flag.String("tls-cert", envString("PQTUNNEL_TLS_CERT", "/etc/pqtunnel/pki/server.crt"), "server certificate PEM")
 	tlsKey := flag.String("tls-key", envString("PQTUNNEL_TLS_KEY", "/etc/pqtunnel/pki/server.key"), "server private key PEM")
 	clientCA := flag.String("client-ca", envString("PQTUNNEL_CLIENT_CA", "/etc/pqtunnel/pki/ca.crt"), "CA that signed client certificates")
+	tlsKEX := flag.String("tls-key-exchange", envString("PQTUNNEL_TLS_KEX", "hybrid"), "TLS 1.3 key exchange: hybrid or pure-pq (experimental)")
 	tunName := flag.String("tun", "pqtun0", "Linux TUN interface name (systemd unit provisions pqtun0)")
 	maxClients := flag.Int("max-clients", envInt("PQTUNNEL_MAX_CLIENTS", 128), "maximum simultaneous clients; set to 1 when using --peer-prefixes")
 	peerPrefixesText := flag.String("peer-prefixes", os.Getenv("PQTUNNEL_PEER_PREFIXES"), "comma-separated allowed peer source/return-route CIDRs for a single site-to-site peer; supports IPv4 and IPv6")
@@ -67,6 +68,8 @@ func main() {
 	}
 	cert, err := tls.LoadX509KeyPair(*tlsCert, *tlsKey)
 	fatalIf(err)
+	tlsConfig, err := tunnel.ServerTLSConfigForMode(cert, pool, tunnel.TLSKeyExchangeMode(*tlsKEX))
+	fatalIf(err)
 	caPEM, err := os.ReadFile(*clientCA)
 	fatalIf(err)
 	pool := x509.NewCertPool()
@@ -77,7 +80,7 @@ func main() {
 	fatalIf(err)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	s := &tunnel.Server{ListenAddress: *listen, TLSConfig: tunnel.ServerTLSConfig(cert, pool), Device: dev, MaxClients: *maxClients, PeerPrefixes: peerPrefixes, LocalPrefixes: localPrefixes, PeerIdentity: *peerName, AllowedDstPorts: allowedDstPorts}
+	s := &tunnel.Server{ListenAddress: *listen, TLSConfig: tlsConfig, Device: dev, MaxClients: *maxClients, PeerPrefixes: peerPrefixes, LocalPrefixes: localPrefixes, PeerIdentity: *peerName, AllowedDstPorts: allowedDstPorts}
 	// The manager process remains available when this tunnel service is stopped.
 	// This root-owned Unix socket exposes only status and authenticated-peer disconnect.
 	ipcListener, err := adminipc.Listen("/run/pqtunnel/control.sock")
@@ -107,7 +110,7 @@ func main() {
 		}()
 		fmt.Printf("PQTunnel admin panel available at http://%s/ (loopback-only; token protected)\n", *adminListen)
 	}
-	fmt.Printf("PQTunnel listening on %s; TLS 1.3 strict X25519MLKEM768; IPv4/IPv6 packets; route policy configured separately\n", *listen)
+	fmt.Printf("PQTunnel listening on %s; TLS 1.3 %s key exchange with strict ML-DSA-65 authentication; IPv4/IPv6 packets; route policy configured separately\n", *listen)
 	if err := s.Serve(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		fatalIf(err)
 	}
