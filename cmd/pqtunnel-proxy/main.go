@@ -30,6 +30,7 @@ type config struct {
 	Listen            string
 	Server            string
 	ServerName        string
+	TLSKeyExchange    string
 	CAPath            string
 	CertPath          string
 	KeyPath           string
@@ -47,6 +48,7 @@ func main() {
 	flag.StringVar(&cfg.Listen, "listen", env("PQTUNNEL_PROXY_LISTEN", ""), "Gateway TLS listener address (explicit host:port)")
 	flag.StringVar(&cfg.Server, "server", env("PQTUNNEL_PROXY_SERVER", ""), "Gateway host:port for the Dialer")
 	flag.StringVar(&cfg.ServerName, "server-name", env("PQTUNNEL_PROXY_SERVER_NAME", ""), "Gateway certificate DNS name or IP SAN")
+	flag.StringVar(&cfg.TLSKeyExchange, "tls-key-exchange", env("PQTUNNEL_PROXY_TLS_KEX", "hybrid"), "TLS 1.3 key exchange: hybrid or pure-pq (experimental)")
 	flag.StringVar(&cfg.CAPath, "ca", env("PQTUNNEL_PROXY_CA", "/etc/pqtunnel/pki/ca.crt"), "CA certificate PEM")
 	flag.StringVar(&cfg.CertPath, "cert", env("PQTUNNEL_PROXY_CERT", ""), "role-specific certificate PEM")
 	flag.StringVar(&cfg.KeyPath, "key", env("PQTUNNEL_PROXY_KEY", ""), "role-specific private key PEM")
@@ -179,7 +181,11 @@ func runGateway(ctx context.Context, cfg config, cert tls.Certificate, caPool *x
 	if err != nil {
 		return fmt.Errorf("bind Gateway transport listener: %w", err)
 	}
-	serverTLS := tunnel.ServerTLSConfig(cert, caPool)
+	serverTLS, err := tunnel.ServerTLSConfigForMode(cert, caPool, tunnel.TLSKeyExchangeMode(cfg.TLSKeyExchange))
+	if err != nil {
+		_ = rawListener.Close()
+		return err
+	}
 	listener := tls.NewListener(rawListener, serverTLS)
 	defer listener.Close()
 	stopListener := context.AfterFunc(ctx, func() { _ = listener.Close() })
@@ -283,7 +289,10 @@ func runDialer(ctx context.Context, cfg config, cert tls.Certificate, caPool *x5
 		fmt.Fprintf(os.Stderr, "pqtunnel-proxy: Direct SOCKS5 proxy listening at %s\n", listener.Addr())
 	}
 
-	tlsConfig := tunnel.StrictTLS13Config()
+	tlsConfig, err := tunnel.TLS13ConfigForMode(tunnel.TLSKeyExchangeMode(cfg.TLSKeyExchange))
+	if err != nil {
+		return err
+	}
 	tlsConfig.RootCAs = caPool
 	tlsConfig.Certificates = []tls.Certificate{cert}
 	tlsConfig.ServerName = cfg.ServerName
