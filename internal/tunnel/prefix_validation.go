@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 
-	"github.com/hatinati2/PQTunnel/internal/prefixset"
+	"github.com/hatinati2/PQTunnel-2/internal/prefixset"
 )
 
 // validateDisjointPrefixes rejects overlapping networks. When allowDefaultRoute is
