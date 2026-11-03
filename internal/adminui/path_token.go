@@ -1,13 +1,24 @@
 package adminui
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
+	"strconv"
 	"strings"
 )
 
-var pathTokenPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+func validPathToken(token string) bool {
+	if len(token) != 64 {
+		return false
+	}
+	for _, c := range token {
+		if !(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
 
 // WithPathToken restricts a public management UI to a per-install, 256-bit URL
 // path token. It rewrites same-origin links, form actions, redirects and cookie
@@ -16,11 +27,11 @@ var pathTokenPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // This is defense in depth only. A path token does not encrypt HTTP traffic or
 // replace the manager login token, and can be disclosed by network observers.
 func WithPathToken(token string, next http.Handler) (http.Handler, error) {
-	if !pathTokenPattern.MatchString(token) {
-		return nil, http.ErrNoCookie // invalid server configuration; never start an unguarded panel
+	if !validPathToken(token) {
+		return nil, errors.New("manager path token must be exactly 64 lowercase hexadecimal characters")
 	}
 	if next == nil {
-		return nil, http.ErrHandlerTimeout
+		return nil, errors.New("manager handler is required")
 	}
 
 	prefix := "/" + token
@@ -49,8 +60,13 @@ func WithPathToken(token string, next http.Handler) (http.Handler, error) {
 					value = prefix + value
 				}
 				if key == "Set-Cookie" {
-					value = strings.ReplaceAll(value, "; Path=/;", "; Path="+prefix+"/;")
-					value = strings.ReplaceAll(value, "; Path=/", "; Path="+prefix+"/")
+					parts := strings.Split(value, ";")
+					for i := 1; i < len(parts); i++ {
+						if strings.EqualFold(strings.TrimSpace(parts[i]), "Path=/") {
+							parts[i] = " Path=" + prefix + "/"
+						}
+					}
+					value = strings.Join(parts, ";")
 				}
 				w.Header().Add(key, value)
 			}
@@ -63,10 +79,9 @@ func WithPathToken(token string, next http.Handler) (http.Handler, error) {
 			html = strings.ReplaceAll(html, `action="/`, `action="`+prefix+`/`)
 			html = strings.ReplaceAll(html, `formaction="/`, `formaction="`+prefix+`/`)
 			body = []byte(html)
-			w.Header().Set("Content-Length", http.Header{"X": {""}}.Get("X"))
-			w.Header().Set("Content-Length", strings.TrimSpace(strings.Repeat("", 0)))
-			// A buffered response has a different length after URL rewriting.
-			w.Header().Set("Content-Length", itoa(len(body)))
+			// The response was buffered for link rewriting, so discard any stale
+			// content length and publish the exact rewritten length.
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		}
 		status := recorder.Code
 		if status == 0 {
@@ -75,19 +90,4 @@ func WithPathToken(token string, next http.Handler) (http.Handler, error) {
 		w.WriteHeader(status)
 		_, _ = w.Write(body)
 	}), nil
-}
-
-func itoa(value int) string {
-	const digits = "0123456789"
-	if value == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for value > 0 {
-		i--
-		buf[i] = digits[value%10]
-		value /= 10
-	}
-	return string(buf[i:])
 }
