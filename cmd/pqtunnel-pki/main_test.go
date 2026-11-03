@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/mldsa"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -113,6 +114,82 @@ func testCA(t *testing.T) (*x509.Certificate, *mldsa.PrivateKey) {
 		t.Fatal(err)
 	}
 	return cert, priv
+}
+
+
+func TestInitAndIssueArtifactsUseMLDSA65(t *testing.T) {
+	out := t.TempDir()
+	initCA([]string{"--out", out, "--server-name", "vpn.example.test"})
+	issueClient([]string{"--out", out, "--ip", "192.0.2.10"})
+	issuePeer([]string{"--out", out, "--name", "peer-fixture"})
+
+	caPEM, err := os.ReadFile(filepath.Join(out, "ca.crt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	caBlock, _ := pem.Decode(caPEM)
+	if caBlock == nil {
+		t.Fatal("ca.crt is not PEM")
+	}
+	ca, err := x509.ParseCertificate(caBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ca.SignatureAlgorithm != x509.MLDSA65 || ca.PublicKeyAlgorithm != x509.MLDSA {
+		t.Fatalf("CA is not ML-DSA-65: signature=%v public-key=%v", ca.SignatureAlgorithm, ca.PublicKeyAlgorithm)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+
+	cases := []struct {
+		name, certFile, keyFile, identity string
+		usage x509.ExtKeyUsage
+		dnsName string
+	}{
+		{name: "server", certFile: "server.crt", keyFile: "server.key", identity: "vpn.example.test", usage: x509.ExtKeyUsageServerAuth, dnsName: "vpn.example.test"},
+		{name: "client", certFile: "client-192_0_2_10.crt", keyFile: "client-192_0_2_10.key", identity: "192.0.2.10", usage: x509.ExtKeyUsageClientAuth},
+		{name: "peer", certFile: "peer-peer-fixture.crt", keyFile: "peer-peer-fixture.key", identity: "peer-fixture", usage: x509.ExtKeyUsageClientAuth},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			certPath := filepath.Join(out, tc.certFile)
+			keyPath := filepath.Join(out, tc.keyFile)
+			pair, err := tls.LoadX509KeyPair(certPath, keyPath)
+			if err != nil {
+				t.Fatalf("load generated certificate/key pair: %v", err)
+			}
+			leaf, err := x509.ParseCertificate(pair.Certificate[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if leaf.Subject.CommonName != tc.identity {
+				t.Fatalf("certificate identity=%q, want %q", leaf.Subject.CommonName, tc.identity)
+			}
+			if leaf.SignatureAlgorithm != x509.MLDSA65 || leaf.PublicKeyAlgorithm != x509.MLDSA {
+				t.Fatalf("certificate is not ML-DSA-65: signature=%v public-key=%v", leaf.SignatureAlgorithm, leaf.PublicKeyAlgorithm)
+			}
+			verify := x509.VerifyOptions{
+				Roots: roots,
+				CurrentTime: time.Now(),
+				KeyUsages: []x509.ExtKeyUsage{tc.usage},
+			}
+			if tc.dnsName != "" {
+				verify.DNSName = tc.dnsName
+			}
+			if _, err := leaf.Verify(verify); err != nil {
+				t.Fatalf("certificate chain verification failed: %v", err)
+			}
+			for _, secretPath := range []string{keyPath} {
+				info, err := os.Stat(secretPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Mode().Perm() != 0600 {
+					t.Fatalf("private key mode=%04o, want 0600", info.Mode().Perm())
+				}
+			}
+		})
+	}
 }
 
 func TestValidateCAKeyRejectsMismatchedKey(t *testing.T) {
