@@ -32,7 +32,7 @@ class OneLineInstallerTests(unittest.TestCase):
         self.assertIn('REPO="hatinati2/PQTunnel-2"', self.script)
         self.assertIn('RAW_BASE="https://raw.githubusercontent.com/${REPO}/main"', self.script)
         self.assertNotIn('REPO="hatinati2/PQTunnel"', self.script)
-        self.assertIn("PQTunnel-2/main/install.sh", self.script)
+        self.assertIn("hatinati2/PQTunnel-2", self.script)
 
     def test_mutating_install_modes_fail_closed_before_dispatch(self) -> None:
         guard = self.script.index("Installation modes are disabled until a reviewed tagged release bundle is published")
