@@ -56,7 +56,7 @@ class OneLineInstallerTests(unittest.TestCase):
         self.assertNotIn("openssl", self.pki_script.lower())
 
     def test_no_deployment_ip_or_credential_is_embedded_by_installer(self) -> None:
-        self.assertNotRegex(self.script, r"(?<![0-9])(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?![0-9])")
+        self.assertNotRegex(self.script, r"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])")
         self.assertNotIn("-----BEGIN PRIVATE KEY-----", self.script)
         self.assertNotIn("PQTUNNEL_MANAGER_TOKEN=replace-me", self.script)
 
