@@ -38,10 +38,11 @@ run_expect_failure() {
 # The CA signing key must never be staged in the endpoint PKI directory.
 run_expect_failure 'an endpoint PKI directory containing ca.key' 'Keep the CA private key offline'
 
-rm -f "$PKI/ca.key"
+# Create a valid but unrelated endpoint key before removing the offline CA key.
 "$PKI_BIN" issue-server --out "$PKI" --server-name other.example.test --prefix wrong
 cp "$PKI/server.key" "$TMP/correct.key"
 cp "$PKI/wrong-server.key" "$PKI/server.key"
+rm -f "$PKI/ca.key"
 run_expect_failure 'a certificate/private-key mismatch' 'load endpoint certificate/private-key pair'
 
 cp "$TMP/correct.key" "$PKI/server.key"
