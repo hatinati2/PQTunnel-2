@@ -82,7 +82,13 @@ if not 1 <= value <= 65535:
 print(value)
 PY
 )" || fail '--panel-port must be a decimal TCP port from 1 to 65535.'
-  if ! python3 - "$PANEL_PORT" <<'PY'
+  skip_panel_port_check=0
+  if (( UPGRADE )) && command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet pqtunnel-manager; then
+    active_listen="$(sed -n 's/^PQTUNNEL_MANAGER_LISTEN=//p' /etc/default/pqtunnel-manager | head -n1)"
+    [[ "$active_listen" == "0.0.0.0:$PANEL_PORT" ]] && skip_panel_port_check=1
+  fi
+  if (( ! skip_panel_port_check )); then
+    if ! python3 - "$PANEL_PORT" <<'PY'
 import socket, sys
 port = int(sys.argv[1])
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -93,8 +99,9 @@ except OSError as exc:
 finally:
     sock.close()
 PY
-  then
-    fail 'the selected panel TCP port is already in use or cannot be bound.'
+    then
+      fail 'the selected panel TCP port is already in use or cannot be bound.'
+    fi
   fi
 elif [[ -n "$PANEL_PORT" ]]; then
   fail '--panel-port is available only together with --public-http.'
@@ -309,6 +316,8 @@ if (( UPGRADE )); then
       fi
       fail "manager upgrade failed; previous binary/unit restored. Review service status and backup: $BACKUP_DIR"
     fi
+  elif (( PUBLIC_HTTP )); then
+    systemctl enable --now pqtunnel-manager || fail 'manager could not start after upgrade; inspect systemctl status and journalctl.'
   fi
   echo "PQTunnel manager upgraded."
   if (( WITH_NODE_ENDPOINT )); then echo "Standalone endpoint assets installed for role $ROLE; tunnel service remains stopped and disabled."; fi
