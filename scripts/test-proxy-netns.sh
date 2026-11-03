@@ -49,7 +49,12 @@ done
 snapshot_host() {
   local out="$1" key value
   {
-    echo '[links]'; ip -o link show
+    echo '[links]'
+    # Hosted VM images may asynchronously change carrier/admin flags on
+    # physical NICs enslaved beneath the primary interface. These are outside
+    # the disposable lab and never touched by this script; keep the primary
+    # host links plus all address/route/firewall state in the exact snapshot.
+    ip -o link show | grep -v 'SLAVE' || true
     echo '[addresses]'; ip -o address show | sed -E 's/valid_lft [^ ]+ preferred_lft [^ ]+/valid_lft * preferred_lft */g'
     echo '[ipv4-routes]'; ip -4 route show table all
     echo '[ipv6-routes]'; ip -6 route show table all
