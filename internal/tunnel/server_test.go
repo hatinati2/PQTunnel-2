@@ -6,7 +6,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/hatinati2/PQTunnel/internal/prefixset"
+	"github.com/hatinati2/PQTunnel-2/internal/prefixset"
 )
 
 func TestPeerForDestinationIPv4AndIPv6(t *testing.T) {
