@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/packet"
-	"github.com/hatinati2/PQTunnel/internal/portpolicy"
-	"github.com/hatinati2/PQTunnel/internal/prefixset"
-	"github.com/hatinati2/PQTunnel/internal/protocol"
+	"github.com/hatinati2/PQTunnel-2/internal/packet"
+	"github.com/hatinati2/PQTunnel-2/internal/portpolicy"
+	"github.com/hatinati2/PQTunnel-2/internal/prefixset"
+	"github.com/hatinati2/PQTunnel-2/internal/protocol"
 )
 
 const maxQueuedPackets = 512
