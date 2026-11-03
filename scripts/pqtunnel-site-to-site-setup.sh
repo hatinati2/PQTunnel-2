@@ -196,7 +196,7 @@ main(){
  curl -fsSL "$RAW/scripts/pqtunnel-site-to-site-remote.sh" -o "$WORK/remote-setup.sh"; bash -n "$WORK/remote-setup.sh"
  . /etc/os-release; [[ "${ID:-}" == ubuntu || "${ID:-}" == debian ]] || fail 'Automatic dependency installation supports Ubuntu/Debian only.';
  manager_check dialer
- for p in /usr/local/bin/pqtunnel-client /etc/systemd/system/pqtunnel-client.service /etc/pqtunnel/pki/client.crt /etc/pqtunnel/pki/client.key /etc/pqtunnel/pki/ca.crt /etc/default/pqtunnel-client /etc/pqtunnel/site-to-site.env /usr/local/lib/pqtunnel/site-to-site-selective.sh /usr/local/lib/pqtunnel/run-client.sh /usr/local/lib/pqtunnel/stop-client-network.sh; do [[ ! -e "$p" ]] || fail "Existing Dialer artifact at $p; refusing overwrite."; done
+ for p in /usr/local/bin/pqtunnel-client /usr/local/bin/pqtunnel-pki /etc/systemd/system/pqtunnel-client.service /etc/pqtunnel/pki/client.crt /etc/pqtunnel/pki/client.key /etc/pqtunnel/pki/ca.crt /etc/default/pqtunnel-client /etc/pqtunnel/site-to-site.env /usr/local/lib/pqtunnel/site-to-site-selective.sh /usr/local/lib/pqtunnel/run-client.sh /usr/local/lib/pqtunnel/stop-client-network.sh; do [[ ! -e "$p" ]] || fail "Existing Dialer artifact at $p; refusing overwrite."; done
  missing=(); for pair in 'ip:iproute2' 'nft:nftables' 'openssl:openssl' 'sysctl:procps' 'ss:iproute2' 'systemctl:systemd' 'systemd-analyze:systemd'; do c="${pair%%:*}"; p="${pair#*:}"; command -v "$c" >/dev/null 2>&1 || missing+=("$p"); done
  if ((${#missing[@]})); then apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl tar python3 "${missing[@]}"; fi
  ssh -p "$SSH_PORT" "$REMOTE" 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl tar openssl iproute2 nftables procps systemd'
@@ -305,6 +305,7 @@ ENV
  "$BUNDLE/pqtunnel-pki" verify --purpose client --cert "$WORK/dialer-pki/client.crt" --key "$WORK/dialer-pki/client.key" --ca "$WORK/dialer-pki/ca.crt" --common-name 10.66.0.2 || fail "Dialer ML-DSA client certificate/key validation failed."
  install -d -o root -g root -m 0750 /etc/pqtunnel /etc/pqtunnel/pki /usr/local/lib/pqtunnel /var/lib/pqtunnel
  install -o root -g root -m 0755 "$BUNDLE/pqtunnel-client" /usr/local/bin/pqtunnel-client
+  install -o root -g root -m 0755 "$BUNDLE/pqtunnel-pki" /usr/local/bin/pqtunnel-pki
  install -o root -g root -m 0644 "$WORK/dialer-pki/ca.crt" /etc/pqtunnel/pki/ca.crt; install -o root -g root -m 0644 "$WORK/dialer-pki/client.crt" /etc/pqtunnel/pki/client.crt; install -o root -g root -m 0600 "$WORK/dialer-pki/client.key" /etc/pqtunnel/pki/client.key
  install -o root -g root -m 0640 "$WORK/dialer-app.env" /etc/default/pqtunnel-client; install -o root -g root -m 0640 "$WORK/dialer-network.env" /etc/pqtunnel/site-to-site.env
  install -o root -g root -m 0755 "$BUNDLE/scripts/site-to-site-selective.sh" /usr/local/lib/pqtunnel/site-to-site-selective.sh; install -o root -g root -m 0755 "$BUNDLE/scripts/run-pqtunnel-client.sh" /usr/local/lib/pqtunnel/run-client.sh; install -o root -g root -m 0755 "$BUNDLE/scripts/stop-pqtunnel-client-network.sh" /usr/local/lib/pqtunnel/stop-client-network.sh
