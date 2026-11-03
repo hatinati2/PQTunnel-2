@@ -50,7 +50,7 @@ snapshot_host() {
   local out="$1" key value
   {
     echo '[links]'; ip -o link show
-    echo '[addresses]'; ip -o address show
+    echo '[addresses]'; ip -o address show | sed -E 's/valid_lft [^ ]+ preferred_lft [^ ]+/valid_lft * preferred_lft */g'
     echo '[ipv4-routes]'; ip -4 route show table all
     echo '[ipv6-routes]'; ip -6 route show table all
     echo '[ipv4-rules]'; ip -4 rule show
@@ -73,7 +73,7 @@ snapshot_ns() {
   local ns="$1" out="$2" key value
   {
     echo '[links]'; ip -n "$ns" -o link show
-    echo '[addresses]'; ip -n "$ns" -o address show
+    echo '[addresses]'; ip -n "$ns" -o address show | sed -E 's/valid_lft [^ ]+ preferred_lft [^ ]+/valid_lft * preferred_lft */g'
     echo '[ipv4-routes]'; ip -n "$ns" -4 route show table all
     echo '[ipv6-routes]'; ip -n "$ns" -6 route show table all
     echo '[ipv4-rules]'; ip -n "$ns" -4 rule show
