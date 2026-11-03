@@ -1,0 +1,146 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Version tag to publish; if absent, it is created only after tests pass
+        required: true
+        type: string
+      linux_mvp_gates_passed:
+        description: Confirm Gates A-F, including real two-host acceptance and recovery, are complete and reviewed
+        required: true
+        type: boolean
+        default: false
+      experimental_prerelease:
+        description: Allow an explicitly experimental prerelease for VPS acceptance testing without claiming the Linux MVP gates passed
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release-version:
+    name: Validate release tag and documentation version
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Reject tags that disagree with documented versions
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: python3 scripts/check-release-version.py "$RELEASE_TAG"
+      - name: Ensure an existing tag points at this tested commit
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          TARGET_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+            existing_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+            if [[ "$existing_sha" != "$TARGET_SHA" ]]; then
+              echo "Release tag ${RELEASE_TAG} already points to ${existing_sha}, not tested commit ${TARGET_SHA}." >&2
+              exit 1
+            fi
+          else
+            echo "Release tag ${RELEASE_TAG} does not exist; it will be created from the tested commit after all gates pass."
+          fi
+
+  integration-test:
+    needs: validate-release-version
+    name: netns integration (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: true
+      - name: Build isolated lab binaries
+        run: |
+          mkdir -p "$RUNNER_TEMP/pqtunnel-bin"
+          go build -o "$RUNNER_TEMP/pqtunnel-bin/pqtunneld" ./cmd/pqtunneld
+          go build -o "$RUNNER_TEMP/pqtunnel-bin/pqtunnel-client" ./cmd/pqtunnel-client
+          go build -o "$RUNNER_TEMP/pqtunnel-bin/pqtunnel-pki" ./cmd/pqtunnel-pki
+          go build -o "$RUNNER_TEMP/pqtunnel-bin/pqtunnel-proxy" ./cmd/pqtunnel-proxy
+      - name: Install namespace test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iproute2 iputils-ping nftables tcpdump iptables openssl python3
+      - name: Run isolated Direct/Reverse TCP proxy lab
+        run: sudo env PQTUNNEL_PROXY_BIN="$RUNNER_TEMP/pqtunnel-bin/pqtunnel-proxy" bash scripts/test-proxy-netns.sh
+      - name: Run isolated dual-stack site-to-site TUN test
+        run: sudo env PQTUNNEL_BIN_DIR="$RUNNER_TEMP/pqtunnel-bin" bash scripts/test-site-to-site-netns.sh
+      - name: Test selective TCP/UDP port forwarding over dual-stack TUN
+        run: sudo env PQTUNNEL_BIN_DIR="$RUNNER_TEMP/pqtunnel-bin" bash scripts/test-selective-forward-netns.sh
+      - name: Test selective TCP/UDP egress over dual-stack TUN
+        run: sudo env PQTUNNEL_BIN_DIR="$RUNNER_TEMP/pqtunnel-bin" bash scripts/test-selective-egress-netns.sh
+      - name: Test selective network helper fail-closed and rollback
+        run: sudo bash scripts/test-site-to-site-selective-fail-closed.sh
+
+  release:
+    # Manual dispatch only. Experimental prereleases may be published for controlled VPS acceptance; stable releases require explicit approval of all Linux MVP gates.
+    if: github.ref == 'refs/heads/main' && (inputs.linux_mvp_gates_passed == true || (inputs.experimental_prerelease == true && contains(inputs.release_tag, '-')))
+    needs: integration-test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: true
+      - name: Run unit tests
+        run: go test -race ./...
+      - name: Static analysis
+        run: go vet ./...
+      - name: Validate shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n install.sh
+          for script in scripts/*.sh; do bash -n "$script"; done
+          python3 -m py_compile scripts/pqtunnel-node-setup-worker.py
+      - name: Install nftables parser for check-only regression test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables
+      - name: Test selective site-to-site nftables preview
+        shell: bash
+        run: bash scripts/test-site-to-site-selective.sh
+      - name: Build and verify Linux release bundles
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: bash scripts/build-release-bundles.sh "$RELEASE_TAG" dist
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ contains(inputs.release_tag, '-') && format('PQTunnel {0} — Experimental VPS Test', inputs.release_tag) || format('PQTunnel {0}', inputs.release_tag) }}
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          generate_release_notes: true
+          # SemVer prerelease identifiers (for example, -rc1, -beta.2, or -alpha)
+          # contain a hyphen; stable release tags do not.
+          prerelease: ${{ contains(inputs.release_tag, '-') }}
