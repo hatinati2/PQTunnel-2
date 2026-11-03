@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/adminapi"
+	"github.com/hatinati2/PQTunnel-2/internal/adminapi"
 )
 
 // clientAdminController exposes the dialer's current authenticated transport
