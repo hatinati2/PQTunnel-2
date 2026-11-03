@@ -261,11 +261,11 @@ ENV
   if (( PUBLIC_HTTP )); then
     NEW_MANAGER_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \\n')"
     [[ "$NEW_MANAGER_TOKEN" =~ ^[0-9a-f]{64}$ ]] || fail 'could not generate a manager login token; installation stopped.'
-    printf 'PQTUNNEL_MANAGER_TOKEN=%s\\n' "$NEW_MANAGER_TOKEN" >> /etc/default/pqtunnel-manager
+    printf 'PQTUNNEL_MANAGER_TOKEN=%s\n' "$NEW_MANAGER_TOKEN" >> /etc/default/pqtunnel-manager
   else
-    printf 'PQTUNNEL_MANAGER_TOKEN=\\n' >> /etc/default/pqtunnel-manager
+    printf 'PQTUNNEL_MANAGER_TOKEN=\n' >> /etc/default/pqtunnel-manager
   fi
-  printf 'PQTUNNEL_SETUP_VERSION=%s\\n' "$SOURCE_VERSION" >> /etc/default/pqtunnel-manager
+  printf 'PQTUNNEL_SETUP_VERSION=%s\n' "$SOURCE_VERSION" >> /etc/default/pqtunnel-manager
   chown root:root /etc/default/pqtunnel-manager
   chmod 0600 /etc/default/pqtunnel-manager
 fi
@@ -328,8 +328,8 @@ else
   if (( PUBLIC_HTTP )); then
     systemctl enable --now pqtunnel-manager || fail 'manager could not start; inspect systemctl status pqtunnel-manager and journalctl -u pqtunnel-manager.'
     path_token="$(sed -n 's/^PQTUNNEL_MANAGER_PATH_TOKEN=//p' /etc/default/pqtunnel-manager | head -n1)"
-    printf '\\nPublic HTTP panel is active at:\\nhttp://%s:%s/%s/\\n' "$PUBLIC_HOST" "$PANEL_PORT" "$path_token"
-    printf 'Save this login token now; it is not shown again:\\nPQTUNNEL_MANAGER_TOKEN=%s\\n' "$NEW_MANAGER_TOKEN"
+    printf '\nPublic HTTP panel is active at:\nhttp://%s:%s/%s/\n' "$PUBLIC_HOST" "$PANEL_PORT" "$path_token"
+    printf 'Save this login token now; it is not shown again:\nPQTUNNEL_MANAGER_TOKEN=%s\n' "$NEW_MANAGER_TOKEN"
     unset NEW_MANAGER_TOKEN
   else
     echo 'PQTunnel manager installed; the top-level installer will assign the token and start the panel.'
