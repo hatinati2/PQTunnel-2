@@ -1,6 +1,6 @@
-module github.com/hatinati2/PQTunnel
+module github.com/hatinati2/PQTunnel-2
 
-go 1.26.0
+go 1.27.0
 
 require golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2
 
