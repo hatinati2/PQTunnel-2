@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PQTunnel one-line entry point. Preflight is read-only; manager setup can print a new token once.
+# PQTunnel-2 source-only alpha entry point. Only read-only preflight is currently enabled.
 set -Eeuo pipefail
 
 VERSION="v0.4.0-pqalpha.1"
@@ -35,32 +35,16 @@ prompt() {
 }
 usage() {
   cat <<'USAGE'
-PQTunnel-2 one-line entry point (experimental source-only alpha v0.4.0-pqalpha.1)
+PQTunnel-2 experimental source-only alpha v0.4.0-pqalpha.1
 
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash -s -- --manager dialer
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash -s -- --manager-upgrade dialer
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash -s -- --node dialer --public-ip 203.0.113.10
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash -s -- --pair
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash -s -- --site-to-site
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | bash -s -- --preflight dialer
+  bash install.sh --help
+  bash install.sh --preflight gateway|dialer|both
 
-Modes:
-  --site-to-site / --full    Guided setup for both VPSes: Gateway over root SSH, Dialer locally,
-                             mutual-TLS PKI, tunnel endpoints, selective-port routing, and both panels.
-  --pair                     Legacy paired installer; requires SSH-key root access to Germany.
-  --manager gateway|dialer   Install the optional local web manager only.
-  --manager-upgrade gateway|dialer
-                             Upgrade an existing manager and install the graphical setup worker.
-  --node gateway|dialer --public-ip IPv4
-                             Install/update this VPS only: panel + stopped local endpoint. Enables
-                             temporary plaintext HTTP on the public IP port 9091.
-  --preflight gateway|dialer|both
-                             Run read-only host checks; no files or network state are changed.
-  --help                     Show this help.
-
---manager installs only the local web manager. --site-to-site/--full configures both the Iran Dialer and overseas Gateway, generates role-specific mutual-TLS certificates, installs both endpoint services and manager panels, and configures a bounded speed-test agent. --pair remains available as the legacy mode. It defaults to selected-port egress (TCP 80/443, UDP 53/123/443), not a full-tunnel VPN. It refuses to overwrite an existing tunnel endpoint. Services and network rules remain unactivated until the explicit APPLY-NETWORK confirmation. Provider firewalls/security groups are not modified. This project remains experimental; use out-of-band recovery access and do not use on production systems.
+Only read-only preflight is enabled in this source-only alpha. VPS-mutating
+installer modes are deliberately disabled until a reviewed tagged release
+bundle is published. No release asset or installer deployment is available
+for this version.
 USAGE
 }
 
@@ -82,18 +66,12 @@ while (($#)); do
 done
 
 if [[ -z "$MODE" ]]; then
-  printf '\nPQTunnel %s — one-line setup\n' "$VERSION"
+  printf '\nPQTunnel-2 %s — source-only alpha\n' "$VERSION"
   printf '  1) Read-only preflight (no changes)\n'
-  printf '  2) Install/start local web manager only\n'
-  printf '  3) Guided full two-VPS setup (tunnel + both management panels, run on Iran)\n'
-  printf '  4) Independent node panel + stopped local endpoint\n'
-  prompt 'Choose [1-4] (only preflight is currently enabled): ' CHOICE
+  prompt 'Choose [1] for read-only preflight: ' CHOICE
   case "$CHOICE" in
     1) MODE=preflight; ROLE=both ;;
-    2) MODE=manager ;;
-    3) MODE=site-to-site ;;
-    4) MODE=node ;;
-    *) fail 'choose 1, 2, 3 or 4.' ;;
+    *) fail 'only read-only preflight is enabled in this source-only alpha.' ;;
   esac
 fi
 
