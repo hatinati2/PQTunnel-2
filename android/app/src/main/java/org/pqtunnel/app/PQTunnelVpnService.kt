@@ -40,7 +40,7 @@ class PQTunnelVpnService : VpnService() {
                 // This Android scaffold still invokes the legacy single-IPv4 client API,
                 // so IPv6 is routed into the VPN but is not yet forwarded by this app.
                 .addRoute("::", 0)
-                .addDnsServer("203.0.113.10")
+                // DNS provisioning is intentionally omitted until a trusted DNS setting is configured.
             val established = builder.establish() ?: throw IllegalStateException("VpnService.establish failed")
             tunnel = established
             val ownedFd = ParcelFileDescriptor.dup(established.fileDescriptor).detachFd()
