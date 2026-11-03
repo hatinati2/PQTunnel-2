@@ -207,7 +207,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
 		if err := r.ParseForm(); err != nil || !h.validCSRF(r, current) { http.Error(w, "invalid request", http.StatusForbidden); return }
 		h.mu.Lock(); delete(h.sessions, id); h.mu.Unlock()
-		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
+		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	case "/invite":
 		if r.Method != http.MethodPost { methodNotAllowed(w, "POST"); return }
@@ -241,8 +241,9 @@ func (h *Handler) dialerInstallCommand(token string) (string, error) {
 		if !(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f') { return "", errors.New("install commit ref is invalid") }
 	}
 	u, err := url.Parse(h.panelBaseURL)
-	if err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path == "" {
-		return "", errors.New("آدرس عمومی پنل در تنظیمات نصب نشده است؛ PANEL URL را در تنظیمات Gateway ذخیره کن")
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+		u.RawPath != "" || !validPanelSecretPath(u.Path) {
+		return "", errors.New("آدرس پنل باید HTTPS معتبر و شامل مسیر محرمانهٔ ۲۵۶ بیتی باشد")
 	}
 	rawURL := u.String()
 	script := "https://raw.githubusercontent.com/hatinati2/PQTunnel-2/" + h.installRef + "/scripts/pqtunnel-control-install.sh"
@@ -356,7 +357,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	for old, s := range h.sessions { if time.Now().After(s.Expires) { delete(h.sessions, old) } }
 	h.sessions[id] = session{CSRF: csrf, Expires: expires}
 	h.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: id, Path: "/", HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, Expires: expires, MaxAge: int(sessionTTL.Seconds())})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: id, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, Expires: expires, MaxAge: int(sessionTTL.Seconds())})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -438,6 +439,18 @@ func randomToken() (string, error) {
 	value := make([]byte, 32)
 	if _, err := rand.Read(value); err != nil { return "", err }
 	return hex.EncodeToString(value), nil
+}
+
+func validPanelSecretPath(path string) bool {
+	if len(path) != 65 || path[0] != '/' {
+		return false
+	}
+	for _, c := range path[1:] {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func operationFailure(result fleet.CommandResult, err error) string {

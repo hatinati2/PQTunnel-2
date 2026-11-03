@@ -134,14 +134,19 @@ func fleetCompleteEnrollment(token string, privateKey *ecdh.PrivateKey, reply fl
 
 func validateBaseURL(value string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(value))
-	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
-		(u.Scheme != "http" && u.Scheme != "https") || u.Path == "" || u.Path == "/" {
-		return "", errors.New("control URL must be an HTTP(S) Gateway URL including the secret panel path")
-	}
-	if strings.Contains(u.Path, "..") || strings.Contains(u.Path, "\\") {
-		return "", errors.New("control URL path is invalid")
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" ||
+		u.Fragment != "" || u.RawPath != "" || !validSecretPath(u.Path) {
+		return "", errors.New("control URL must use HTTPS and include the 256-bit Gateway secret path")
 	}
 	return strings.TrimRight(u.String(), "/"), nil
+}
+
+func validSecretPath(path string) bool {
+	if len(path) != 65 || path[0] != '/' { return false }
+	for _, c := range path[1:] {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) { return false }
+	}
+	return true
 }
 
 func randomID() (string, error) {

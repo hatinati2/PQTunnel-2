@@ -36,16 +36,15 @@ func main() {
 	keyFile := os.Getenv("PQTUNNEL_MANAGER_TLS_KEY")
 	isLoopback := adminui.ValidateLoopbackAddress(listen) == nil
 	allowInsecurePublicHTTP := strings.EqualFold(os.Getenv("PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP"), "true")
+	if allowInsecurePublicHTTP {
+		fatalIf(errors.New("public plaintext HTTP is disabled; configure a valid TLS certificate and key"))
+	}
 	pathToken := os.Getenv("PQTUNNEL_MANAGER_PATH_TOKEN")
 	if !isLoopback {
 		if pathToken == "" {
 			fatalIf(fmt.Errorf("public manager listeners require a per-install PQTUNNEL_MANAGER_PATH_TOKEN; use 32 random bytes encoded as 64 lowercase hexadecimal characters"))
 		}
-		if allowInsecurePublicHTTP {
-			fatalIf(validatePublicHTTPListener(listen, publicHost))
-		} else {
-			fatalIf(validatePublicTLSListener(listen, publicHost, certFile, keyFile))
-		}
+		fatalIf(validatePublicTLSListener(listen, publicHost, certFile, keyFile))
 	}
 	token := os.Getenv("PQTUNNEL_MANAGER_TOKEN")
 	if len([]byte(token)) < 32 {
@@ -84,7 +83,7 @@ func main() {
 		mux.Handle("/", handler)
 		panelHandler = mux
 	} else {
-		handler, err := adminui.NewWithPublicAccess(token, controller, publicHost, allowInsecurePublicHTTP)
+		handler, err := adminui.NewWithPublicAccess(token, controller, publicHost, false)
 		fatalIf(err)
 		panelHandler = handler
 	}
@@ -133,65 +132,56 @@ func main() {
 		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fatalIf(err)
 		}
-	} else if allowInsecurePublicHTTP {
-		fmt.Fprintf(os.Stderr, "WARNING: PQTunnel manager (%s) is exposed over INSECURE plaintext HTTP at http://%s/; credentials and session cookies can be intercepted. Disable this mode as soon as HTTPS is configured.\n", role, publicHost)
-		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fatalIf(err)
-		}
 	} else {
-		server.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-		fmt.Printf("PQTunnel manager (%s) available at https://%s/ (TLS enabled; host allowlisted)\n", role, publicHost)
+		server.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS13}
+		_, panelPort, _ := net.SplitHostPort(listen)
+		fmt.Printf("PQTunnel manager (%s) available at https://%s:%s/ (TLS 1.3 enabled; host validated)\n", role, publicHost, panelPort)
 		if err := server.ServeTLS(listener, certFile, keyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fatalIf(err)
 		}
 	}
 }
 
-func validatePublicHTTPListener(address, publicHost string) error {
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return fmt.Errorf("public manager listen address must be IP:port (for example 0.0.0.0:9091)")
+func validPublicTLSHost(host string) bool {
+	if host == "" || len(host) > 253 {
+		return false
 	}
-	listenIP, err := netip.ParseAddr(host)
-	if err != nil {
-		return fmt.Errorf("public manager listener must use a literal IP or wildcard address")
+	labels := strings.Split(host, ".")
+	if len(labels) < 2 {
+		return false
 	}
-	portNumber, err := strconv.Atoi(port)
-	if err != nil || portNumber < 1 || portNumber > 65535 {
-		return fmt.Errorf("public manager listen port must be between 1 and 65535")
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, c := range label {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') || c == '-') {
+				return false
+			}
+		}
 	}
-	ip, err := netip.ParseAddr(publicHost)
-	if err != nil || !ip.IsValid() || ip.IsLoopback() || ip.IsUnspecified() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
-		return fmt.Errorf("PQTUNNEL_MANAGER_PUBLIC_HOST must be a public, non-loopback literal IP address")
-	}
-	if !listenIP.IsUnspecified() && listenIP != ip {
-		return fmt.Errorf("bind to 0.0.0.0:9091 or the same IP configured in PQTUNNEL_MANAGER_PUBLIC_HOST")
-	}
-	return nil
+	return true
 }
 
 func validatePublicTLSListener(address, publicHost, certFile, keyFile string) error {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return fmt.Errorf("public manager listen address must be IP:port (for example 0.0.0.0:9091)")
+		return fmt.Errorf("public manager listen address must be IP:port (for example 0.0.0.0:6100)")
 	}
-	if _, err := netip.ParseAddr(host); err != nil {
+	bindIP, err := netip.ParseAddr(host)
+	if err != nil {
 		return fmt.Errorf("public manager listener must use a literal IP or wildcard address")
 	}
 	portNumber, err := strconv.Atoi(port)
 	if err != nil || portNumber < 1 || portNumber > 65535 {
 		return fmt.Errorf("public manager listen port must be between 1 and 65535")
 	}
-	if publicHost == "" {
-		return fmt.Errorf("PQTUNNEL_MANAGER_PUBLIC_HOST must be the public IP address covered by the TLS certificate")
+	if !validPublicTLSHost(publicHost) {
+		return fmt.Errorf("PQTUNNEL_MANAGER_PUBLIC_HOST must be a fully qualified DNS hostname")
 	}
-	ip, err := netip.ParseAddr(publicHost)
-	if err != nil || !ip.IsValid() || ip.IsLoopback() || ip.IsUnspecified() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
-		return fmt.Errorf("PQTUNNEL_MANAGER_PUBLIC_HOST must be a public, non-loopback literal IP address")
-	}
-	listenIP, _ := netip.ParseAddr(host)
-	if !listenIP.IsUnspecified() && listenIP != ip {
-		return fmt.Errorf("bind to 0.0.0.0:9091 or the same IP configured in PQTUNNEL_MANAGER_PUBLIC_HOST")
+	if !bindIP.IsUnspecified() {
+		return fmt.Errorf("bind the public TLS listener to 0.0.0.0:%s when using a DNS hostname", port)
 	}
 	if certFile == "" || keyFile == "" {
 		return fmt.Errorf("public manager access requires PQTUNNEL_MANAGER_TLS_CERT and PQTUNNEL_MANAGER_TLS_KEY; refusing plaintext HTTP")
@@ -211,7 +201,7 @@ func validatePublicTLSListener(address, publicHost, certFile, keyFile string) er
 		return fmt.Errorf("cannot parse TLS leaf certificate: %w", err)
 	}
 	if err := leaf.VerifyHostname(publicHost); err != nil {
-		return fmt.Errorf("TLS certificate must contain the configured public IP in its IP SAN: %w", err)
+		return fmt.Errorf("TLS certificate SAN does not match the configured public host: %w", err)
 	}
 	return nil
 }

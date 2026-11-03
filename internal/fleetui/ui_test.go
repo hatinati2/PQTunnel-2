@@ -72,7 +72,7 @@ func TestMobileFleetLoginDashboardAndInvite(t *testing.T) {
 	h.ServeHTTP(loginResp, loginReq)
 	if loginResp.Code != http.StatusSeeOther { t.Fatalf("login status=%d body=%s", loginResp.Code, loginResp.Body.String()) }
 	cookies := loginResp.Result().Cookies()
-	if len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+	if len(cookies) != 1 || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatalf("session cookie not hardened: %#v", cookies)
 	}
 
@@ -190,5 +190,23 @@ func TestMobileFleetDisplaysGatewayOperationAndConfigurationErrors(t *testing.T)
 	}
 	if strings.Contains(actionBody, "gateway restart completed") {
 		t.Fatal("failed Gateway operation was reported as successful")
+	}
+}
+
+func TestDialerInstallCommandRequiresHTTPSAndSecretPath(t *testing.T) {
+	const ref = "0123456789abcdef0123456789abcdef01234567"
+	h := &Handler{installRef: ref, panelBaseURL: "http://198.51.100.10:6100/" + strings.Repeat("a", 64)}
+	if _, err := h.dialerInstallCommand(strings.Repeat("b", 64)); err == nil {
+		t.Fatal("plaintext HTTP enrollment URL must be rejected")
+	}
+	h.panelBaseURL = "https://control.example.test:6100/not-a-secret-path"
+	if _, err := h.dialerInstallCommand(strings.Repeat("b", 64)); err == nil {
+		t.Fatal("non-secret panel path must be rejected")
+	}
+	h.panelBaseURL = "https://control.example.test:6100/" + strings.Repeat("a", 64)
+	command, err := h.dialerInstallCommand(strings.Repeat("b", 64))
+	if err != nil { t.Fatal(err) }
+	if !strings.Contains(command, "--control-url \"https://control.example.test:6100/"+strings.Repeat("a", 64)+"\"") {
+		t.Fatalf("install command does not contain the HTTPS URL: %s", command)
 	}
 }
