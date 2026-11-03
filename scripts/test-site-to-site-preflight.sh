@@ -35,6 +35,7 @@ if PQTUNNEL_REF=main bash "$ROOT/scripts/pqtunnel-bootstrap.sh" install-client >
   exit 1
 fi
 bash "$ROOT/scripts/pqtunnel-bootstrap.sh" check-config --kind gateway --app-env "$ROOT/scripts/pqtunneld.site-to-site.env.example" --network-env "$ROOT/scripts/site-to-site-gateway.env.example"
+grep -Fxq "PQTUNNEL_PEER_NAME=10.66.0.2" "$ROOT/scripts/pqtunneld.site-to-site.env.example"
 bash "$ROOT/scripts/pqtunnel-bootstrap.sh" check-config --kind dialer --app-env "$ROOT/scripts/pqtunnel-client.env.example" --network-env "$ROOT/scripts/site-to-site.env.example"
 
 # A shell-expression payload must be rejected as data, never evaluated.
