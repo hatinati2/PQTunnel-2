@@ -41,6 +41,5 @@ if bash scripts/prepare-site-to-site-pki.sh \
   exit 1
 fi
 
-go test -run '^TestInitAndIssueArtifactsUseMLDSA65
- ./cmd/pqtunnel-pki
+go test -run '^TestInitAndIssueArtifactsUseMLDSA65$' ./cmd/pqtunnel-pki
 echo "PASS: staged ML-DSA-65 PKI bundle layout and private-key permissions verified."
