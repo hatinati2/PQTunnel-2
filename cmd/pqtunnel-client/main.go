@@ -13,10 +13,10 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/hatinati2/PQTunnel/internal/portpolicy"
-	"github.com/hatinati2/PQTunnel/internal/prefixset"
-	"github.com/hatinati2/PQTunnel/internal/tun"
-	"github.com/hatinati2/PQTunnel/internal/tunnel"
+	"github.com/hatinati2/PQTunnel-2/internal/portpolicy"
+	"github.com/hatinati2/PQTunnel-2/internal/prefixset"
+	"github.com/hatinati2/PQTunnel-2/internal/tun"
+	"github.com/hatinati2/PQTunnel-2/internal/tunnel"
 )
 
 func main() {
