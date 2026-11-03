@@ -1,8 +1,7 @@
 package main
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
+	"crypto/mldsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -68,6 +67,9 @@ func TestIssueServerCreatesVerifiableCertificateAndPrivateKey(t *testing.T) {
 			if _, err := leaf.Verify(opts); err != nil {
 				t.Fatalf("issued server certificate does not verify for %q: %v", host, err)
 			}
+			if leaf.SignatureAlgorithm != x509.MLDSA65 || leaf.PublicKeyAlgorithm != x509.MLDSA {
+				t.Fatalf("server certificate is not ML-DSA-65: signature=%v public-key=%v", leaf.SignatureAlgorithm, leaf.PublicKeyAlgorithm)
+			}
 			if len(leaf.ExtKeyUsage) != 1 || leaf.ExtKeyUsage[0] != x509.ExtKeyUsageServerAuth {
 				t.Fatalf("unexpected extended key usages: %v", leaf.ExtKeyUsage)
 			}
@@ -83,15 +85,17 @@ func TestIssueServerCreatesVerifiableCertificateAndPrivateKey(t *testing.T) {
 	}
 }
 
-func testCA(t *testing.T) (*x509.Certificate, ed25519.PrivateKey) {
+func testCA(t *testing.T) (*x509.Certificate, *mldsa.PrivateKey) {
 	t.Helper()
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		t.Fatal(err)
 	}
+	pub := priv.PublicKey()
 	now := time.Now()
 	tpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
+		SignatureAlgorithm: x509.MLDSA65,
 		Subject: pkix.Name{CommonName: "test CA"},
 		NotBefore: now.Add(-time.Minute),
 		NotAfter: now.Add(time.Hour),
@@ -112,7 +116,7 @@ func testCA(t *testing.T) (*x509.Certificate, ed25519.PrivateKey) {
 
 func TestValidateCAKeyRejectsMismatchedKey(t *testing.T) {
 	caCert, _ := testCA(t)
-	_, otherKey, err := ed25519.GenerateKey(rand.Reader)
+	otherKey, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,13 +126,15 @@ func TestValidateCAKeyRejectsMismatchedKey(t *testing.T) {
 }
 
 func TestValidateCAKeyRejectsNonCA(t *testing.T) {
-	pub, key, err := ed25519.GenerateKey(rand.Reader)
+	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
+	pub := key.PublicKey()
 	tpl := &x509.Certificate{
 		SerialNumber: big.NewInt(2),
+		SignatureAlgorithm: x509.MLDSA65,
 		Subject: pkix.Name{CommonName: "not a CA"},
 		NotBefore: now.Add(-time.Minute),
 		NotAfter: now.Add(time.Hour),
@@ -156,9 +162,9 @@ func TestValidateCAKeyRejectsExpiredCA(t *testing.T) {
 	}
 }
 
-func TestValidateCAKeyRejectsInvalidPrivateKeyLength(t *testing.T) {
+func TestValidateCAKeyRejectsNilKey(t *testing.T) {
 	caCert, _ := testCA(t)
-	if err := validateCAKey(caCert, ed25519.PrivateKey{1, 2, 3}); err == nil {
-		t.Fatal("expected invalid private-key length to be rejected")
+	if err := validateCAKey(caCert, nil); err == nil {
+		t.Fatal("expected nil ML-DSA key to be rejected")
 	}
 }
