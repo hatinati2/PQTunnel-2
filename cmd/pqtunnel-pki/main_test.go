@@ -142,13 +142,13 @@ func TestInitAndIssueArtifactsUseMLDSA65(t *testing.T) {
 	roots.AddCert(ca)
 
 	cases := []struct {
-		name, certFile, keyFile, identity string
+		name, certFile, keyFile, identity, purpose string
 		usage x509.ExtKeyUsage
 		dnsName string
 	}{
-		{name: "server", certFile: "server.crt", keyFile: "server.key", identity: "vpn.example.test", usage: x509.ExtKeyUsageServerAuth, dnsName: "vpn.example.test"},
-		{name: "client", certFile: "client-192_0_2_10.crt", keyFile: "client-192_0_2_10.key", identity: "192.0.2.10", usage: x509.ExtKeyUsageClientAuth},
-		{name: "peer", certFile: "peer-peer-fixture.crt", keyFile: "peer-peer-fixture.key", identity: "peer-fixture", usage: x509.ExtKeyUsageClientAuth},
+		{name: "server", certFile: "server.crt", keyFile: "server.key", identity: "vpn.example.test", purpose: "server", usage: x509.ExtKeyUsageServerAuth, dnsName: "vpn.example.test"},
+		{name: "client", certFile: "client-192_0_2_10.crt", keyFile: "client-192_0_2_10.key", identity: "192.0.2.10", purpose: "client", usage: x509.ExtKeyUsageClientAuth},
+		{name: "peer", certFile: "peer-peer-fixture.crt", keyFile: "peer-peer-fixture.key", identity: "peer-fixture", purpose: "client", usage: x509.ExtKeyUsageClientAuth},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -179,6 +179,15 @@ func TestInitAndIssueArtifactsUseMLDSA65(t *testing.T) {
 			if _, err := leaf.Verify(verify); err != nil {
 				t.Fatalf("certificate chain verification failed: %v", err)
 			}
+			verifyArgs := []string{"--cert", certPath, "--key", keyPath, "--ca", filepath.Join(out, "ca.crt"), "--purpose", tc.purpose}
+			if tc.purpose == "server" {
+				verifyArgs = append(verifyArgs, "--server-name", tc.dnsName)
+			} else {
+				verifyArgs = append(verifyArgs, "--common-name", tc.identity)
+			}
+			if err := verifyCertificate(verifyArgs); err != nil {
+				t.Fatalf("Go-native endpoint verifier rejected issued %s certificate: %v", tc.name, err)
+			}
 			for _, secretPath := range []string{keyPath} {
 				info, err := os.Stat(secretPath)
 				if err != nil {
@@ -189,6 +198,64 @@ func TestInitAndIssueArtifactsUseMLDSA65(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+
+func TestVerifyCertificateRejectsWrongPurposeAndWrongName(t *testing.T) {
+	out := t.TempDir()
+	initCA([]string{"--out", out, "--server-name", "vpn.example.test"})
+	serverCert := []string{
+		"--cert", filepath.Join(out, "server.crt"),
+		"--key", filepath.Join(out, "server.key"),
+		"--ca", filepath.Join(out, "ca.crt"),
+	}
+	if err := verifyCertificate(append(append([]string{}, serverCert...), "--purpose", "client")); err == nil {
+		t.Fatal("server certificate unexpectedly passed client-auth purpose validation")
+	}
+	wrongName := append(append([]string{}, serverCert...), "--purpose", "server", "--server-name", "other.example.test")
+	if err := verifyCertificate(wrongName); err == nil {
+		t.Fatal("server certificate unexpectedly passed an incorrect SAN name")
+	}
+}
+
+func TestVerifyCertificateRejectsMismatchedPrivateKey(t *testing.T) {
+	out := t.TempDir()
+	initCA([]string{"--out", out, "--server-name", "vpn.example.test"})
+	wrongKey := filepath.Join(out, "wrong.key")
+	other, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePrivateKey(wrongKey, other)
+	args := []string{
+		"--cert", filepath.Join(out, "server.crt"),
+		"--key", wrongKey,
+		"--ca", filepath.Join(out, "ca.crt"),
+		"--purpose", "server",
+		"--server-name", "vpn.example.test",
+	}
+	if err := verifyCertificate(args); err == nil {
+		t.Fatal("mismatched private key unexpectedly passed endpoint verification")
+	}
+}
+
+func TestVerifyCertificateRejectsInsecurePrivateKeyPermissions(t *testing.T) {
+	out := t.TempDir()
+	initCA([]string{"--out", out, "--server-name", "vpn.example.test"})
+	keyPath := filepath.Join(out, "server.key")
+	if err := os.Chmod(keyPath, 0644); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{
+		"--cert", filepath.Join(out, "server.crt"),
+		"--key", keyPath,
+		"--ca", filepath.Join(out, "ca.crt"),
+		"--purpose", "server",
+		"--server-name", "vpn.example.test",
+	}
+	if err := verifyCertificate(args); err == nil {
+		t.Fatal("world-readable endpoint private key unexpectedly passed verification")
 	}
 }
 
