@@ -6,12 +6,18 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/hatinati2/PQTunnel-2/internal/adminapi"
 )
 
 func TestWithPathTokenProtectsAndRewritesPanelRoutes(t *testing.T) {
 	const pathToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	const loginToken = "unit-test-manager-token-with-at-least-32-bytes"
-	handler, err := New(loginToken, &fakeController{})
+	controller := &fakeManagerController{
+		fakeController: &fakeController{},
+		view: adminapi.ManagerSnapshot{Role: "gateway", ActiveState: "active"},
+	}
+	handler, err := New(loginToken, controller)
 	if err != nil {
 		t.Fatal(err)
 	}
