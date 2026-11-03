@@ -13,6 +13,8 @@ PQTunnel files/service state and certificate expiry. Does not source config file
 print certificate/private-key contents, write reports, or apply changes.
 --endpoint optionally checks the existing route to a literal IP or resolved hostname.
 PQTUNNEL_PREFLIGHT_PKI_DIR optionally overrides the PKI directory (mainly for isolated fixture tests).
+PQTUNNEL_PKI_BIN optionally selects the Go-native pqtunnel-pki verifier.
+PQTUNNEL_PREFLIGHT_SERVER_NAME and PQTUNNEL_PREFLIGHT_PEER_NAME optionally pin certificate identities.
 USAGE
 }
 while (($#)); do
@@ -39,6 +41,24 @@ report() {
 }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+PKI_BIN="${PQTUNNEL_PKI_BIN:-}"
+if [[ -z "$PKI_BIN" ]]; then
+  if have pqtunnel-pki; then
+    PKI_BIN="$(command -v pqtunnel-pki)"
+  elif [[ -x /usr/local/bin/pqtunnel-pki ]]; then
+    PKI_BIN=/usr/local/bin/pqtunnel-pki
+  elif [[ -x /usr/local/sbin/pqtunnel-pki ]]; then
+    PKI_BIN=/usr/local/sbin/pqtunnel-pki
+  fi
+fi
+PKI_AVAILABLE=0
+if [[ -n "$PKI_BIN" && -f "$PKI_BIN" && -x "$PKI_BIN" ]]; then
+  PKI_AVAILABLE=1
+  report PASS 'Go-native pqtunnel-pki verifier is available.'
+else
+  report WARN 'Go-native pqtunnel-pki verifier is unavailable; configured endpoint certificates cannot be validated.'
+fi
+
 printf '%s\n' 'PQTunnel host preflight — READ-ONLY'
 printf 'time_utc=%s role=%s\n' "$(date -u +%FT%TZ 2>/dev/null || printf unknown)" "$ROLE"
 printf 'host=%s uid=%s\n' "$(hostname 2>/dev/null || printf unknown)" "$(id -u 2>/dev/null || printf unknown)"
@@ -58,7 +78,7 @@ if [[ -r /etc/os-release ]]; then
 else report WARN '/etc/os-release is not readable; OS could not be identified.'; fi
 
 if [[ $(id -u 2>/dev/null || echo 1) -eq 0 ]]; then report PASS 'Running as root; read-only metadata checks can be more complete.'; else report WARN 'Not root; firewall/service checks may be incomplete. This script still changes nothing.'; fi
-for cmd in ip nft sysctl systemctl openssl stat awk grep; do
+for cmd in ip nft sysctl systemctl stat awk grep; do
   if have "$cmd"; then report PASS "command available: $cmd"; else report WARN "command unavailable: $cmd"; fi
 done
 
@@ -225,36 +245,35 @@ check_file() {
 }
 
 
+verify_endpoint_with_ca() {
+  local purpose="$1" cert="$2" key="$3" ca="$4"
+  [[ "$PKI_AVAILABLE" == 1 ]] || return 127
+  local -a args=(verify --purpose "$purpose" --cert "$cert" --key "$key" --ca "$ca")
+  if [[ "$purpose" == server && -n "${PQTUNNEL_PREFLIGHT_SERVER_NAME:-}" ]]; then
+    args+=(--server-name "$PQTUNNEL_PREFLIGHT_SERVER_NAME")
+  elif [[ "$purpose" == client && -n "${PQTUNNEL_PREFLIGHT_PEER_NAME:-}" ]]; then
+    args+=(--common-name "$PQTUNNEL_PREFLIGHT_PEER_NAME")
+  fi
+  "$PKI_BIN" "${args[@]}" >/dev/null 2>&1
+}
+
 check_certificate_bundle() {
   local cert="$1" key="$2" ca="$3" purpose="$4" label="$5"
-  local cert_pub key_pub
-  [[ -s "$cert" && -s "$key" && -s "$ca" ]] || return 0
-
-  if openssl x509 -in "$cert" -checkend 0 -noout >/dev/null 2>&1; then
-    report PASS "$label certificate is parseable and not expired."
-  else
-    report FAIL "$label certificate is expired or unreadable."
+  if [[ ! -s "$cert" && ! -s "$key" && ! -s "$ca" ]]; then
+    return 0
   fi
-  if openssl verify -purpose "$purpose" -CAfile "$ca" "$cert" >/dev/null 2>&1; then
-    report PASS "$label certificate verifies against the configured CA for $purpose."
-  else
-    report FAIL "$label certificate does not verify against the configured CA for $purpose."
+  if [[ ! -s "$cert" || ! -s "$key" || ! -s "$ca" ]]; then
+    report FAIL "$label certificate bundle is incomplete (certificate, private key and CA are all required)."
+    return 0
   fi
-  if cert_pub="$(openssl x509 -in "$cert" -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | openssl dgst -sha256 2>/dev/null)" &&
-     key_pub="$(openssl pkey -in "$key" -passin pass: -pubout -outform DER 2>/dev/null | openssl dgst -sha256 2>/dev/null)" &&
-     [[ -n "$cert_pub" && -n "$key_pub" ]]; then
-    if [[ "$cert_pub" == "$key_pub" ]]; then report PASS "$label certificate matches its private key."; else report FAIL "$label certificate does not match its private key."; fi
-  else
-    report FAIL "$label public/private key consistency could not be verified without prompting."
+  if [[ "$PKI_AVAILABLE" != 1 ]]; then
+    report FAIL "$label certificate cannot be validated; install pqtunnel-pki or set PQTUNNEL_PKI_BIN."
+    return 0
   fi
-}
-check_ca_certificate() {
-  local cert="$1" label="$2"
-  [[ -s "$cert" ]] || return 0
-  if openssl x509 -in "$cert" -checkend 0 -noout >/dev/null 2>&1; then
-    report PASS "$label CA certificate is parseable and not expired."
+  if verify_endpoint_with_ca "$purpose" "$cert" "$key" "$ca"; then
+    report PASS "$label ML-DSA certificate chain, EKU, identity, key match and permissions verified by pqtunnel-pki."
   else
-    report FAIL "$label CA certificate is expired or unreadable."
+    report FAIL "$label ML-DSA certificate/key/chain validation failed with Go pqtunnel-pki."
   fi
 }
 
@@ -269,14 +288,7 @@ if [[ "$ROLE" == gateway || "$ROLE" == both ]]; then
     if systemctl is-active --quiet pqtunneld 2>/dev/null; then report WARN 'pqtunneld service is active.'; else report PASS 'pqtunneld service is not active.'; fi
     if systemctl is-enabled --quiet pqtunneld 2>/dev/null; then report WARN 'pqtunneld is enabled at boot.'; else report PASS 'pqtunneld is not enabled at boot.'; fi
   fi
-  if have openssl; then
-    if [[ -s "$PKI_DIR/server.crt" ]]; then
-      END_DATE=$(openssl x509 -in "$PKI_DIR/server.crt" -noout -enddate 2>/dev/null | sed 's/^notAfter=//')
-      [[ -z "$END_DATE" ]] || printf 'server_certificate_not_after=%s\n' "$END_DATE"
-    fi
-    check_certificate_bundle "$PKI_DIR/server.crt" "$PKI_DIR/server.key" "$PKI_DIR/ca.crt" sslserver 'Server'
-    check_ca_certificate "$PKI_DIR/ca.crt" 'Peer'
-  fi
+  check_certificate_bundle "$PKI_DIR/server.crt" "$PKI_DIR/server.key" "$PKI_DIR/ca.crt" server 'Server'
 fi
 
 if [[ "$ROLE" == dialer || "$ROLE" == both ]]; then
@@ -294,25 +306,24 @@ if [[ "$ROLE" == dialer || "$ROLE" == both ]]; then
   if have systemctl; then
     if systemctl is-active --quiet pqtunnel-client 2>/dev/null; then report WARN 'pqtunnel-client systemd unit is active.'; else report PASS 'pqtunnel-client systemd unit is not active.'; fi
   fi
-  if have openssl; then
-    CLIENT_CA="$PKI_DIR/ca.crt"
-    if [[ -s "$PKI_DIR/dialer-ca.crt" && -s "$PKI_DIR/client.crt" ]] &&
-       openssl verify -purpose sslclient -CAfile "$PKI_DIR/dialer-ca.crt" "$PKI_DIR/client.crt" >/dev/null 2>&1; then
+  CLIENT_CA="$PKI_DIR/ca.crt"
+  if [[ -s "$PKI_DIR/dialer-ca.crt" && -s "$PKI_DIR/client.crt" && -s "$PKI_DIR/client.key" && "$PKI_AVAILABLE" == 1 ]]; then
+    if verify_endpoint_with_ca client "$PKI_DIR/client.crt" "$PKI_DIR/client.key" "$PKI_DIR/dialer-ca.crt"; then
       CLIENT_CA="$PKI_DIR/dialer-ca.crt"
-    elif [[ -s "$PKI_DIR/dialer-ca.crt" && -s "$PKI_DIR/client.crt" ]] &&
-         openssl verify -purpose sslclient -CAfile "$PKI_DIR/ca.crt" "$PKI_DIR/client.crt" >/dev/null 2>&1; then
-      report WARN 'dialer-ca.crt exists but does not verify the client certificate; ca.crt matches, so the fallback CA is being used.'
+    elif verify_endpoint_with_ca client "$PKI_DIR/client.crt" "$PKI_DIR/client.key" "$PKI_DIR/ca.crt"; then
+      report WARN 'dialer-ca.crt does not verify the client certificate; ca.crt matches, so the compatibility fallback CA is being used.'
+    else
+      report FAIL 'Client/peer certificate does not verify against dialer-ca.crt or ca.crt.'
+      CLIENT_CA="$PKI_DIR/dialer-ca.crt"
     fi
-    printf 'client_certificate_ca=%s\n' "${CLIENT_CA##*/}"
-    if [[ "$CLIENT_CA" != "$PKI_DIR/ca.crt" ]]; then
-      check_file "$CLIENT_CA" 'client/peer CA certificate'
-    fi
-    check_certificate_bundle "$PKI_DIR/client.crt" "$PKI_DIR/client.key" "$CLIENT_CA" sslclient 'Client/peer'
-    if [[ "$CLIENT_CA" != "$PKI_DIR/ca.crt" ]]; then
-      check_ca_certificate "$CLIENT_CA" 'Client/peer'
-    fi
-    check_ca_certificate "$PKI_DIR/ca.crt" 'Server'
+  elif [[ -s "$PKI_DIR/dialer-ca.crt" && "$PKI_AVAILABLE" != 1 ]]; then
+    CLIENT_CA="$PKI_DIR/dialer-ca.crt"
   fi
+  printf 'client_certificate_ca=%s\n' "${CLIENT_CA##*/}"
+  if [[ "$CLIENT_CA" != "$PKI_DIR/ca.crt" ]]; then
+    check_file "$CLIENT_CA" 'client/peer CA certificate'
+  fi
+  check_certificate_bundle "$PKI_DIR/client.crt" "$PKI_DIR/client.key" "$CLIENT_CA" client 'Client/peer'
 fi
 
 if [[ -n "$ENDPOINT" ]]; then
