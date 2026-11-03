@@ -332,7 +332,7 @@ func TestLoginRateLimitsRepeatedInvalidTokensPerClient(t *testing.T) {
 	if resp := postLogin(t, h, token, clientA); resp.Code != http.StatusTooManyRequests {
 		t.Fatalf("correct token must remain blocked during cooldown, got %d", resp.Code)
 	}
-	if resp := postLogin(t, h, token, "203.0.113.10:12001"); resp.Code != http.StatusSeeOther || resp.Header().Get("Location") != "/" {
+	if resp := postLogin(t, h, token, "127.0.0.2:12001"); resp.Code != http.StatusSeeOther || resp.Header().Get("Location") != "/" {
 		t.Fatalf("separate client login status=%d location=%q", resp.Code, resp.Header().Get("Location"))
 	}
 }
@@ -395,11 +395,11 @@ func TestLoginAttemptTableOverflowFailsClosed(t *testing.T) {
 			t.Fatalf("seed attempt %d status=%d, want 200", i, resp.Code)
 		}
 	}
-	overflow := postLogin(t, h, "wrong-token", "203.0.113.10:12000")
+	overflow := postLogin(t, h, "wrong-token", "127.0.0.129:12000")
 	if overflow.Code != http.StatusTooManyRequests || overflow.Header().Get("Retry-After") != "60" {
 		t.Fatalf("overflow status=%d retry-after=%q", overflow.Code, overflow.Header().Get("Retry-After"))
 	}
-	if resp := postLogin(t, h, token, "203.0.113.10:12000"); resp.Code != http.StatusTooManyRequests {
+	if resp := postLogin(t, h, token, "127.0.0.130:12000"); resp.Code != http.StatusTooManyRequests {
 		t.Fatalf("overflow mode must fail closed for other clients, got %d", resp.Code)
 	}
 }
