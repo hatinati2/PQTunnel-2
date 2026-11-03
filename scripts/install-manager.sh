@@ -12,8 +12,10 @@ Usage:
   sudo bash ./scripts/install-manager.sh --source /path/to/Linux-bundle --role dialer --upgrade
   sudo bash ./scripts/install-manager.sh --source /path/to/Linux-bundle --role dialer --with-node-endpoint --public-http --public-host 203.0.113.10 --upgrade
 
-The default manager listener is loopback-only. Public plaintext HTTP requires
-both --public-http and --public-host and is intended only for temporary testing.
+The default manager listener is loopback-only. Public HTTP requires --public-http
+and --public-host. Its TCP port can be selected with --panel-port (default 6100);
+on an interactive terminal the installer asks before using the default.
+Public HTTP is unencrypted: the secret URL path is not a substitute for TLS.
 With --with-node-endpoint, role-specific binaries and transport-only systemd units
 are installed but not enabled or started. Existing tunnel configurations are
 never overwritten by this installer.
@@ -27,6 +29,7 @@ UPGRADE=0
 WITH_NODE_ENDPOINT=0
 PUBLIC_HTTP=0
 PUBLIC_HOST=""
+PANEL_PORT=""
 while (($#)); do
   case "$1" in
     --source) SOURCE="${2:?missing source path}"; shift 2 ;;
@@ -35,6 +38,7 @@ while (($#)); do
     --with-node-endpoint) WITH_NODE_ENDPOINT=1; shift ;;
     --public-http) PUBLIC_HTTP=1; shift ;;
     --public-host) PUBLIC_HOST="${2:?missing public host IP}"; shift 2 ;;
+    --panel-port) PANEL_PORT="${2:?missing panel port}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -57,6 +61,35 @@ if value.version != 4 or not value.is_global:
 PY
 elif [[ -n "$PUBLIC_HOST" ]]; then
   fail '--public-host requires --public-http.'
+fi
+if (( PUBLIC_HTTP )); then
+  if [[ -z "$PANEL_PORT" && -t 0 ]]; then
+    read -r -p 'Choose the public HTTP panel TCP port [6100]: ' PANEL_PORT
+  fi
+  PANEL_PORT="${PANEL_PORT:-6100}"
+  [[ "$PANEL_PORT" =~ ^[0-9]{1,5}$ ]] || fail '--panel-port must be a decimal TCP port from 1 to 65535.'
+  PANEL_PORT="$(python3 - "$PANEL_PORT" <<'PY'
+import sys
+value = int(sys.argv[1], 10)
+if not 1 <= value <= 65535:
+    raise SystemExit(1)
+print(value)
+PY
+)" || fail '--panel-port must be a decimal TCP port from 1 to 65535.'
+  python3 - "$PANEL_PORT" <<'PY'
+import socket, sys
+port = int(sys.argv[1])
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    sock.bind(("0.0.0.0", port))
+except OSError as exc:
+    raise SystemExit(f"panel TCP port {port} is unavailable on 0.0.0.0: {exc}")
+finally:
+    sock.close()
+PY
+  [[ $? -eq 0 ]] || fail 'the selected panel TCP port is already in use or cannot be bound.'
+elif [[ -n "$PANEL_PORT" ]]; then
+  fail '--panel-port is available only together with --public-http.'
 fi
 [[ -f "$SOURCE/deploy/systemd/pqtunnel-manager.service" ]] || fail 'deploy/systemd/pqtunnel-manager.service is missing.'
 [[ -f "$SOURCE/deploy/systemd/pqtunnel-setup.service" ]] || fail 'deploy/systemd/pqtunnel-setup.service is missing.'
@@ -112,7 +145,8 @@ fi
 TMPBIN=""
 BACKUP_DIR=""
 NEW_MANAGER_TOKEN=""
-cleanup() { [[ -z "$TMPBIN" ]] || rm -f "$TMPBIN"; [[ -z "${config_tmp:-}" ]] || rm -f -- "$config_tmp"; unset NEW_MANAGER_TOKEN; }
+NEW_MANAGER_PATH_TOKEN=""
+cleanup() { [[ -z "$TMPBIN" ]] || rm -f "$TMPBIN"; [[ -z "${config_tmp:-}" ]] || rm -f -- "$config_tmp"; unset NEW_MANAGER_TOKEN NEW_MANAGER_PATH_TOKEN; }
 trap cleanup EXIT
 if [[ -f "$SOURCE/go.mod" ]]; then
   command -v go >/dev/null || fail 'Go 1.27+ is required to build from source; use the matching Linux release bundle otherwise.'
@@ -168,7 +202,7 @@ fi
 if (( UPGRADE )); then
   config_tmp="$(mktemp /etc/default/pqtunnel-manager.XXXXXX)"
   old_endpoint_mode="$(sed -n 's/^PQTUNNEL_MANAGER_ENDPOINT_MODE=//p' /etc/default/pqtunnel-manager | head -n1)"
-  awk '!/^(PQTUNNEL_SETUP_VERSION|PQTUNNEL_MANAGER_LISTEN|PQTUNNEL_MANAGER_TOKEN|PQTUNNEL_MANAGER_PUBLIC_HOST|PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP|PQTUNNEL_MANAGER_TLS_CERT|PQTUNNEL_MANAGER_TLS_KEY|PQTUNNEL_MANAGER_ENDPOINT_MODE)=/' /etc/default/pqtunnel-manager > "$config_tmp"
+  awk '!/^(PQTUNNEL_SETUP_VERSION|PQTUNNEL_MANAGER_LISTEN|PQTUNNEL_MANAGER_TOKEN|PQTUNNEL_MANAGER_PATH_TOKEN|PQTUNNEL_MANAGER_PUBLIC_HOST|PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP|PQTUNNEL_MANAGER_TLS_CERT|PQTUNNEL_MANAGER_TLS_KEY|PQTUNNEL_MANAGER_ENDPOINT_MODE)=/' /etc/default/pqtunnel-manager > "$config_tmp"
   old_listen="$(sed -n 's/^PQTUNNEL_MANAGER_LISTEN=//p' /etc/default/pqtunnel-manager | head -n1)"
   old_insecure="$(sed -n 's/^PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=//p' /etc/default/pqtunnel-manager | head -n1)"
   old_token="$(sed -n 's/^PQTUNNEL_MANAGER_TOKEN=//p' /etc/default/pqtunnel-manager | head -n1)"
@@ -178,7 +212,13 @@ if (( UPGRADE )); then
       [[ "$NEW_MANAGER_TOKEN" =~ ^[0-9a-f]{64}$ ]] || fail 'could not generate a replacement manager token; upgrade stopped.'
       old_token="$NEW_MANAGER_TOKEN"
     fi
-    printf 'PQTUNNEL_MANAGER_LISTEN=0.0.0.0:9091\nPQTUNNEL_MANAGER_PUBLIC_HOST=%s\nPQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true\nPQTUNNEL_MANAGER_TOKEN=%s\n' "$PUBLIC_HOST" "$old_token" >> "$config_tmp"
+    old_path_token="$(sed -n 's/^PQTUNNEL_MANAGER_PATH_TOKEN=//p' /etc/default/pqtunnel-manager | head -n1)"
+    if [[ ! "$old_path_token" =~ ^[0-9a-f]{64}$ ]]; then
+      NEW_MANAGER_PATH_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+      [[ "$NEW_MANAGER_PATH_TOKEN" =~ ^[0-9a-f]{64}$ ]] || fail 'could not generate a secret panel path; upgrade stopped.'
+      old_path_token="$NEW_MANAGER_PATH_TOKEN"
+    fi
+    printf 'PQTUNNEL_MANAGER_LISTEN=0.0.0.0:%s\nPQTUNNEL_MANAGER_PUBLIC_HOST=%s\nPQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true\nPQTUNNEL_MANAGER_TOKEN=%s\nPQTUNNEL_MANAGER_PATH_TOKEN=%s\n' "$PANEL_PORT" "$PUBLIC_HOST" "$old_token" "$old_path_token" >> "$config_tmp"
   elif [[ "$old_insecure" == true || ! "$old_listen" =~ ^(127\.0\.0\.1:[0-9]+|\[::1\]:[0-9]+)$ ]]; then
     NEW_MANAGER_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
     [[ "$NEW_MANAGER_TOKEN" =~ ^[0-9a-f]{64}$ ]] || fail 'could not generate a replacement manager token; upgrade stopped.'
@@ -201,7 +241,9 @@ else
 PQTUNNEL_MANAGER_ROLE=$ROLE
 ENV
   if (( PUBLIC_HTTP )); then
-    printf 'PQTUNNEL_MANAGER_LISTEN=0.0.0.0:9091\nPQTUNNEL_MANAGER_PUBLIC_HOST=%s\nPQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true\n' "$PUBLIC_HOST" >> /etc/default/pqtunnel-manager
+    NEW_MANAGER_PATH_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    [[ "$NEW_MANAGER_PATH_TOKEN" =~ ^[0-9a-f]{64}$ ]] || fail 'could not generate a secret panel path; installation stopped.'
+    printf 'PQTUNNEL_MANAGER_LISTEN=0.0.0.0:%s\nPQTUNNEL_MANAGER_PUBLIC_HOST=%s\nPQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true\nPQTUNNEL_MANAGER_PATH_TOKEN=%s\n' "$PANEL_PORT" "$PUBLIC_HOST" "$NEW_MANAGER_PATH_TOKEN" >> /etc/default/pqtunnel-manager
   else
     printf 'PQTUNNEL_MANAGER_LISTEN=127.0.0.1:9091\n' >> /etc/default/pqtunnel-manager
   fi
@@ -260,12 +302,12 @@ if (( UPGRADE )); then
   if (( WITH_NODE_ENDPOINT )); then echo "Standalone endpoint assets installed for role $ROLE; tunnel service remains stopped and disabled."; fi
   echo "Protected backup: $BACKUP_DIR"
   echo "Setup wizard worker is installed but not enabled as a daemon; it is invoked only for an authenticated setup request."
+  if (( PUBLIC_HTTP )); then
+    path_token="$(sed -n 's/^PQTUNNEL_MANAGER_PATH_TOKEN=//p' /etc/default/pqtunnel-manager | head -n1)"
+    printf '\nPublic HTTP panel URL (save this private URL):\nhttp://%s:%s/%s/\n' "$PUBLIC_HOST" "$PANEL_PORT" "$path_token"
+  fi
   if [[ -n "$NEW_MANAGER_TOKEN" ]]; then
-    if (( PUBLIC_HTTP )); then
-      printf '\nPublic HTTP is configured at http://%s:9091. Save the replacement login token exactly once:\nPQTUNNEL_MANAGER_TOKEN=%s\n' "$PUBLIC_HOST" "$NEW_MANAGER_TOKEN"
-    else
-      printf '\nThe manager is now loopback-only and its login token was rotated. Save this new token exactly once:\nPQTUNNEL_MANAGER_TOKEN=%s\n' "$NEW_MANAGER_TOKEN"
-    fi
+    printf '\nSave the replacement manager login token exactly once:\nPQTUNNEL_MANAGER_TOKEN=%s\n' "$NEW_MANAGER_TOKEN"
     unset NEW_MANAGER_TOKEN
   else
     echo "Existing manager token and role were preserved."
@@ -275,7 +317,11 @@ else
   if (( WITH_NODE_ENDPOINT )); then echo "Standalone endpoint assets installed for role $ROLE; tunnel service remains stopped and disabled."; fi
 fi
 if (( PUBLIC_HTTP )); then
-  echo 'WARNING: manager is exposed over plaintext HTTP. Use only for temporary testing and restrict TCP/9091 at the provider firewall.'
+  path_token="$(sed -n 's/^PQTUNNEL_MANAGER_PATH_TOKEN=//p' /etc/default/pqtunnel-manager | head -n1)"
+  printf 'WARNING: public HTTP is unencrypted. The secret path and login token can be intercepted or modified; path secrecy does not provide encryption. Permit TCP/%s only from trusted source IPs where possible.\n' "$PANEL_PORT"
+  if (( ! UPGRADE )); then
+    printf 'Panel URL (save it now; it is not written to normal logs):\nhttp://%s:%s/%s/\n' "$PUBLIC_HOST" "$PANEL_PORT" "$path_token"
+  fi
 else
   echo 'For remote browser access, use SSH local forwarding; do not expose port 9091 publicly.'
 fi
