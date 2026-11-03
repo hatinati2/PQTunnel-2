@@ -98,7 +98,7 @@ var pageTemplate = template.Must(template.New("fleet").Parse(`<!doctype html>
 h1{font-size:1.4rem;margin:0}h2{font-size:1.05rem;margin:0 0 11px}.muted,small{color:var(--muted);font-size:.88rem}
 .card,.section{background:linear-gradient(145deg,#17243b,#111a2c);border:1px solid var(--line);border-radius:15px;padding:14px;margin:11px 0;min-width:0}
 .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.stat{background:#0d1729;border:1px solid #24334e;border-radius:11px;padding:12px}.stat span{display:block;color:var(--muted);font-size:.82rem}.stat b{font-size:1.05rem;overflow-wrap:anywhere}
-.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.actions{display:flex;gap:7px;flex-wrap:wrap;margin:9px 0}
+.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.actions{display:flex;gap:7px;flex-wrap:wrap;margin:9px 0}.refresh{border:1px solid #40516f;border-radius:9px;padding:8px 12px;color:var(--text);text-decoration:none;display:inline-flex;align-items:center}
 button{border:1px solid #40516f;background:#1b2b45;color:var(--text);border-radius:9px;padding:9px 12px;font:inherit;font-weight:700;cursor:pointer;min-height:41px}button.primary{background:var(--accent);color:#082033;border-color:transparent}button.danger{background:#3a1d2c;border-color:#783b48;color:#fecaca}button:disabled{opacity:.45;cursor:not-allowed}
 label{display:block;font-size:.88rem;font-weight:650;margin:7px 0}input,select{display:block;width:100%;margin-top:5px;padding:10px;border:1px solid #3a4a68;border-radius:9px;background:#0b1527;color:var(--text);font:inherit;min-width:0}
 input[type=number]{max-width:220px}form{margin:0}.notice{border:1px solid #31536c;background:#102a3b;color:#c8edff;padding:11px;border-radius:10px;margin:9px 0;overflow-wrap:anywhere}.error{border-color:#793e4a;background:#341d2a;color:#fecaca}
@@ -111,7 +111,8 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;ba
 </style></head><body>
 {{if .CSRF}}
 <main class="wrap"><header><div><h1>مرکز کنترل PQTunnel</h1><p class="muted">مدیریت Gateway و Dialer از یک پنل موبایل‌محور</p></div>
-<form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>خروج</button></form></header>
+<div class="actions"><a class="refresh" href="/">به‌روزرسانی وضعیت</a>
+<form method="post" action="/logout"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>خروج</button></form></div></header>
 {{if .Notice}}<div class="notice">{{.Notice}}</div>{{end}}{{if .Error}}<div class="notice error">{{.Error}}</div>{{end}}
 <section class="grid">
 <div class="stat"><span>Gateway · سرویس</span><b><i class="dot {{if eq .Gateway.ServiceStatus "active"}}up{{end}}"></i>{{.Gateway.ServiceStatus}}</b></div>
