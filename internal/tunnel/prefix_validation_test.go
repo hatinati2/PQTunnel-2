@@ -4,7 +4,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/hatinati2/PQTunnel/internal/prefixset"
+	"github.com/hatinati2/PQTunnel-2/internal/prefixset"
 )
 
 func TestValidateDisjointPrefixes(t *testing.T) {
