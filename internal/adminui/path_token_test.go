@@ -27,7 +27,7 @@ func TestWithPathTokenProtectsAndRewritesPanelRoutes(t *testing.T) {
 	}
 
 	for _, path := range []string{"/", "/login", "/wrong/" + pathToken + "/"} {
-		req := httptest.NewRequest(http.MethodGet, "http://panel.example:6100"+path, nil)
+		req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:6100"+path, nil)
 		resp := httptest.NewRecorder()
 		wrapped.ServeHTTP(resp, req)
 		if resp.Code != http.StatusNotFound {
@@ -36,9 +36,9 @@ func TestWithPathTokenProtectsAndRewritesPanelRoutes(t *testing.T) {
 	}
 
 	values := url.Values{"token": {loginToken}}
-	loginReq := httptest.NewRequest(http.MethodPost, "http://panel.example:6100/"+pathToken+"/login", strings.NewReader(values.Encode()))
+	loginReq := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:6100/"+pathToken+"/login", strings.NewReader(values.Encode()))
 	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	loginReq.Header.Set("Origin", "http://panel.example:6100")
+	loginReq.Header.Set("Origin", "http://127.0.0.1:6100")
 	loginResp := httptest.NewRecorder()
 	wrapped.ServeHTTP(loginResp, loginReq)
 	if loginResp.Code != http.StatusSeeOther || loginResp.Header().Get("Location") != "/"+pathToken+"/" {
@@ -49,7 +49,7 @@ func TestWithPathTokenProtectsAndRewritesPanelRoutes(t *testing.T) {
 		t.Fatalf("session cookie not scoped to secret path: %#v", cookies)
 	}
 
-	dashboardReq := httptest.NewRequest(http.MethodGet, "http://panel.example:6100/"+pathToken+"/", nil)
+	dashboardReq := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:6100/"+pathToken+"/", nil)
 	dashboardReq.AddCookie(cookies[0])
 	dashboardResp := httptest.NewRecorder()
 	wrapped.ServeHTTP(dashboardResp, dashboardReq)
