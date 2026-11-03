@@ -1,0 +1,29 @@
+[Unit]
+Description=PQTunnel Dialer fleet management agent
+Wants=network-online.target
+After=network-online.target pqtunnel-client-transport.service
+Documentation=https://github.com/hatinati2/PQTunnel-2
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/pqtunnel-agent --config /etc/pqtunnel-agent/agent.json
+Restart=always
+RestartSec=3s
+TimeoutStopSec=15s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=-/etc/default/pqtunnel-client -/etc/pqtunnel/pki -/var/lib/pqtunnel-manager
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
