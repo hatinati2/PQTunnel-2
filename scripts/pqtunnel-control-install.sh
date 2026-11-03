@@ -66,6 +66,12 @@ case "$ROLE" in
     ;;
 esac
 
+case "$(uname -m)" in
+  x86_64|amd64) GO_ARCH=amd64 ;;
+  aarch64|arm64) GO_ARCH=arm64 ;;
+  *) fail "unsupported Linux build architecture: $(uname -m)" ;;
+esac
+
 . /etc/os-release
 [[ "${ID:-}" == ubuntu || "${ID:-}" == debian ]] || fail 'automatic prerequisite setup supports Ubuntu/Debian only.'
 if ! command -v apt-get >/dev/null 2>&1; then fail 'apt-get is required to install missing base prerequisites.'; fi
@@ -136,22 +142,33 @@ curl --fail --silent --show-error --location \
 tar -xzf "$WORK/source.tar.gz" --strip-components=1 -C "$WORK/source"
 SOURCE="$WORK/source"
 grep -Fxq 'module github.com/hatinati2/PQTunnel-2' "$SOURCE/go.mod" || fail 'downloaded source does not match the expected repository.'
-[[ -f "$SOURCE/scripts/install-manager.sh" && -x "$SOURCE/scripts/pqtunnel-node-setup-worker.py" ]] || fail 'the pinned commit lacks manager/endpoint setup assets.'
+[[ -f "$SOURCE/scripts/build-release-bundles.sh" && -f "$SOURCE/scripts/install-manager.sh" && -x "$SOURCE/scripts/pqtunnel-node-setup-worker.py" ]] || fail 'the pinned commit lacks manager/endpoint build assets.'
+VERSION="$(sed -nE 's/^VERSION="(v[0-9A-Za-z._-]+)"$/\1/p' "$SOURCE/install.sh" | head -n1)"
+[[ "$VERSION" =~ ^v[0-9A-Za-z._-]+$ ]] || fail 'could not determine the pinned source bundle version.'
 
 export PATH
 export GOTOOLCHAIN=local
 export CGO_ENABLED=0
 
+# Build the exact pinned source into the same verified Linux bundle format used
+# by CI. install-manager then installs prebuilt binaries without requiring Go
+# or mutable source branches on the destination host.
+DIST="$WORK/dist"
+bash "$SOURCE/scripts/build-release-bundles.sh" "$VERSION" "$DIST"
+BUNDLE="$WORK/PQTunnel-$VERSION-linux-$GO_ARCH"
+tar -xzf "$DIST/PQTunnel-$VERSION-linux-$GO_ARCH.tar.gz" -C "$WORK"
+[[ -x "$BUNDLE/pqtunnel-manager" && -x "$BUNDLE/pqtunnel-agent" && -x "$BUNDLE/pqtunnel-pki" ]] || fail 'the pinned Linux bundle is missing a required management binary.'
+
 if [[ "$ROLE" == gateway ]]; then
   export PQTUNNEL_MANAGER_INSTALL_REF="$REF"
-  bash "$SOURCE/scripts/install-manager.sh" \
-    --source "$SOURCE" --role gateway --with-node-endpoint \
+  bash "$BUNDLE/scripts/install-manager.sh" \
+    --source "$BUNDLE" --role gateway --with-node-endpoint \
     --public-http --public-host "$PUBLIC_HOST" --panel-port "$PANEL_PORT"
   printf '\nGateway Control Plane installation finished.\n'
   printf 'Open the HTTP panel URL printed above from your phone.\n'
   printf 'Provider firewall: allow TCP/%s to the Gateway (preferably only from trusted source addresses).\n' "$PANEL_PORT"
 else
-  bash "$SOURCE/scripts/install-manager.sh" --source "$SOURCE" --role dialer --with-node-endpoint
+  bash "$BUNDLE/scripts/install-manager.sh" --source "$BUNDLE" --role dialer --with-node-endpoint
   /usr/local/sbin/pqtunnel-agent --enroll \
     --control-url "$CONTROL_URL" --pair-token "$PAIR_TOKEN" \
     --config /etc/pqtunnel-agent/agent.json
