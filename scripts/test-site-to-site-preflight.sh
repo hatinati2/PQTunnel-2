@@ -182,7 +182,7 @@ echo 'PASS: preflight distinguishes strict and loose rp_filter modes and reports
 
 # Generate ML-DSA fixtures with the same Go-native PKI tool used by the runtime.
 PKI_BIN="$TMP_CONFIG_DIR/pqtunnel-pki"
-GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -o "$PKI_BIN" "$ROOT/cmd/pqtunnel-pki"
+(cd "$ROOT" && GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -o "$PKI_BIN" ./cmd/pqtunnel-pki)
 
 FIXTURE_PKI="$TMP_CONFIG_DIR/pki-dedicated"
 mkdir -m 0700 "$FIXTURE_PKI" "$FIXTURE_PKI/server-ca" "$FIXTURE_PKI/dialer-ca-work"
