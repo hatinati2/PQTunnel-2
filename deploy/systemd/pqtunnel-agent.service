@@ -6,11 +6,13 @@ Documentation=https://github.com/hatinati2/PQTunnel-2
 
 [Service]
 Type=simple
-ExecStart=/usr/local/sbin/pqtunnel-agent --config /etc/pqtunnel-agent/agent.json
+ExecStart=/usr/local/sbin/pqtunnel-agent --config /var/lib/pqtunnel-agent/agent.json
 Restart=always
 RestartSec=3s
 TimeoutStopSec=15s
 UMask=0077
+StateDirectory=pqtunnel-agent
+StateDirectoryMode=0700
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true

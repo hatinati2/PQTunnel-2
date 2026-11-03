@@ -35,9 +35,10 @@ type nodeState struct {
 }
 
 type storedNode struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Key  string `json:"key"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Key          string `json:"key"`
+	LastSequence int64  `json:"last_sequence,omitempty"`
 }
 
 type storedState struct {
@@ -90,10 +91,10 @@ func (b *Broker) load() error {
 	}
 	for _, item := range state.Nodes {
 		key, err := hex.DecodeString(item.Key)
-		if err != nil || len(key) != 32 || !nodeIDPattern.MatchString(item.ID) || !nodeNamePattern.MatchString(item.Name) {
+		if err != nil || len(key) != 32 || !nodeIDPattern.MatchString(item.ID) || !nodeNamePattern.MatchString(item.Name) || item.LastSequence < 0 {
 			return errors.New("fleet state contains an invalid node record")
 		}
-		b.nodes[item.ID] = &nodeState{ID: item.ID, Name: item.Name, Key: key}
+		b.nodes[item.ID] = &nodeState{ID: item.ID, Name: item.Name, Key: key, LastSequence: item.LastSequence}
 	}
 	return nil
 }
@@ -103,6 +104,7 @@ func (b *Broker) persistLocked() error {
 	for _, node := range b.nodes {
 		state.Nodes = append(state.Nodes, storedNode{
 			ID: node.ID, Name: node.Name, Key: hex.EncodeToString(node.Key),
+			LastSequence: node.LastSequence,
 		})
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
@@ -221,21 +223,30 @@ func (b *Broker) Poll(envelope Envelope) (Envelope, error) {
 	if request.Snapshot.Role != "dialer" {
 		return Envelope{}, errors.New("agent role mismatch")
 	}
+	previousSequence := node.LastSequence
 	node.LastSequence = request.Sequence
+	if err := b.persistLocked(); err != nil {
+		node.LastSequence = previousSequence
+		return Envelope{}, fmt.Errorf("persist Agent replay counter: %w", err)
+	}
 	node.LastSeen = now
 	node.Snapshot = request.Snapshot
 
 	response := AgentResponse{}
-	if request.Result != nil && node.Pending != nil && request.Result.ID == node.Pending.command.ID {
-		result := *request.Result
-		response.AckID = result.ID
-		pending := node.Pending
-		node.Pending = nil
-		select {
-		case pending.result <- result:
-		default:
+	if request.Result != nil && request.Result.ID != "" {
+		// A valid encrypted Agent result is acknowledged even when the Gateway
+		// restarted and its in-memory pending call was lost.
+		response.AckID = request.Result.ID
+		if node.Pending != nil && request.Result.ID == node.Pending.command.ID {
+			result := *request.Result
+			pending := node.Pending
+			node.Pending = nil
+			select {
+			case pending.result <- result:
+			default:
+			}
+			close(pending.result)
 		}
-		close(pending.result)
 	}
 	if node.Pending != nil {
 		copyCommand := node.Pending.command

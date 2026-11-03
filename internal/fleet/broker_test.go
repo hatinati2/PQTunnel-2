@@ -100,6 +100,11 @@ func TestEnrollmentEncryptedPollingCommandAndReplayProtection(t *testing.T) {
 	if _, err := broker.Poll(firstEnvelope); err == nil {
 		t.Fatal("replayed agent message was accepted")
 	}
+	restartedBroker, err := NewBroker(statePath)
+	if err != nil { t.Fatal(err) }
+	if _, err := restartedBroker.Poll(env); err == nil {
+		t.Fatal("replayed last Agent message was accepted after Gateway/Broker restart")
+	}
 	if snapshot := broker.DialerSnapshot(); !snapshot.Connected || snapshot.Snapshot.ActiveState != "active" {
 		t.Fatalf("Dialer snapshot not updated: %#v", snapshot)
 	}

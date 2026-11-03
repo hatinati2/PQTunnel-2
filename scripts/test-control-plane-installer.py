@@ -42,7 +42,11 @@ class ControlPlaneInstallerTests(unittest.TestCase):
 
     def test_agent_enrollment_does_not_enable_tunnel_service(self) -> None:
         self.assertIn('/usr/local/sbin/pqtunnel-agent --enroll', self.script)
+        self.assertIn('--config /var/lib/pqtunnel-agent/agent.json', self.script)
         self.assertIn('systemctl enable --now pqtunnel-agent', self.script)
+        service = (ROOT / "deploy/systemd/pqtunnel-agent.service").read_text(encoding="utf-8")
+        self.assertIn('StateDirectory=pqtunnel-agent', service)
+        self.assertIn('/var/lib/pqtunnel-agent/agent.json', service)
         self.assertNotIn('systemctl enable --now pqtunneld-transport', self.script)
         self.assertNotIn('systemctl enable --now pqtunnel-client-transport', self.script)
 

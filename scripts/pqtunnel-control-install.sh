@@ -204,8 +204,8 @@ else
   bash "$BUNDLE/scripts/install-manager.sh" --source "$BUNDLE" --role dialer --with-node-endpoint
   /usr/local/sbin/pqtunnel-agent --enroll \
     --control-url "$CONTROL_URL" --pair-token "$PAIR_TOKEN" \
-    --config /etc/pqtunnel-agent/agent.json
-  chmod 0600 /etc/pqtunnel-agent/agent.json
+    --config /var/lib/pqtunnel-agent/agent.json
+  chmod 0600 /var/lib/pqtunnel-agent/agent.json
   systemctl daemon-reload
   systemctl enable --now pqtunnel-agent
   systemctl --no-pager --full status pqtunnel-agent
