@@ -2,9 +2,9 @@
 # PQTunnel one-line entry point. Preflight is read-only; manager setup can print a new token once.
 set -Eeuo pipefail
 
-VERSION="v0.3.0-rc9"
-REPO="hatinati2/PQTunnel"
-RAW_BASE="https://raw.githubusercontent.com/${REPO}/${VERSION}"
+VERSION="v0.4.0-pqalpha.1"
+REPO="hatinati2/PQTunnel-2"
+RAW_BASE="https://raw.githubusercontent.com/${REPO}/main"
 SOURCE_RAW_BASE="$RAW_BASE"
 RELEASE_BASE="https://github.com/${REPO}/releases/download/${VERSION}"
 TMP_DIR=""
@@ -35,16 +35,16 @@ prompt() {
 }
 usage() {
   cat <<'USAGE'
-PQTunnel one-line installer (experimental release v0.3.0-rc9)
+PQTunnel one-line installer (experimental release v0.4.0-pqalpha.1)
 
 Usage:
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel/main/install.sh | sudo bash
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel/main/install.sh | sudo bash -s -- --manager dialer
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel/main/install.sh | sudo bash -s -- --manager-upgrade dialer
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel/main/install.sh | sudo bash -s -- --node dialer --public-ip 203.0.113.10
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel/main/install.sh | sudo bash -s -- --pair
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel/main/install.sh | sudo bash -s -- --site-to-site
-  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel/main/install.sh | bash -s -- --preflight dialer
+  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash
+  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash -s -- --manager dialer
+  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash -s -- --manager-upgrade dialer
+  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash -s -- --node dialer --public-ip 203.0.113.10
+  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash -s -- --pair
+  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash -s -- --site-to-site
+  curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | bash -s -- --preflight dialer
 
 Modes:
   --site-to-site / --full    Guided setup for both VPSes: Gateway over root SSH, Dialer locally,
