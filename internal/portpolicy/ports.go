@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hatinati2/PQTunnel/internal/packet"
+	"github.com/hatinati2/PQTunnel-2/internal/packet"
 )
 
 const (
