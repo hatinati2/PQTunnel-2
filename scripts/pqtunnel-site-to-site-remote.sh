@@ -7,6 +7,7 @@ umask 077
 ACTION="$1"
 STAGE="$2"
 VERSION="$3"
+TLS_PORT="$4"
 SERVER_NAME="${5:-}"
 
 fail() { printf 'PQTunnel remote setup: %s\n' "$*" >&2; exit 1; }
@@ -93,6 +94,7 @@ check_listener_port_free() {
 
 validate_staged_config() {
   local path; local -a verify_args
+  [[ -n "$SERVER_NAME" ]] || fail "Gateway certificate DNS name/IP is required for ML-DSA verification."
   [[ -s "$STAGE/gateway-app.env" && -s "$STAGE/gateway-network.env" && -s "$STAGE/gateway-manager-token" && -s "$STAGE/speedtest-token" ]] || fail 'Gateway configuration/token staging is incomplete.'
   [[ -d "$STAGE/gateway-pki" ]] || fail 'Gateway PKI staging directory is missing.'
   chmod 0600 "$STAGE/gateway-manager-token" "$STAGE/speedtest-token"
