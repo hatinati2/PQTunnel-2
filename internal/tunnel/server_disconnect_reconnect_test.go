@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/prefixset"
+	"github.com/hatinati2/PQTunnel-2/internal/prefixset"
 )
 
 // TestServerAdminDisconnectAllowsDialerReconnect verifies a complete loopback
