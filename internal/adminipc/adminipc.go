@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/adminapi"
+	"github.com/hatinati2/PQTunnel-2/internal/adminapi"
 )
 
 const maxMessageBytes = 8192
