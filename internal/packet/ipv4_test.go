@@ -11,7 +11,7 @@ func TestIPv4(t *testing.T) {
 	p[0] = 0x45
 	binary.BigEndian.PutUint16(p[2:4], 20)
 	copy(p[12:16], []byte{10, 66, 0, 2})
-	copy(p[16:20], []byte{1, 1, 1, 1})
+	copy(p[16:20], []byte{203, 0, 113, 10})
 	s, d, got, err := IPv4(p)
 	if err != nil {
 		t.Fatal(err)
