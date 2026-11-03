@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/adminapi"
+	"github.com/hatinati2/PQTunnel-2/internal/adminapi"
 )
 
 var setupWizardTemplate = template.Must(template.New("setup-wizard").Funcs(template.FuncMap{
