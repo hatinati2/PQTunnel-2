@@ -1,8 +1,7 @@
 package main
 
 import (
-	"crypto/ed25519"
-	"bytes"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -47,12 +46,12 @@ func initCA(args []string) {
 	if err := os.MkdirAll(*out, 0700); err != nil {
 		die(err.Error())
 	}
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	pub, priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		die(err.Error())
 	}
 	now := time.Now()
-	caTpl := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: "PQTunnel local CA"}, NotBefore: now.Add(-5 * time.Minute), NotAfter: now.AddDate(10, 0, 0), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature}
+	caTpl := &x509.Certificate{SerialNumber: serial(), SignatureAlgorithm: x509.MLDSA65, Subject: pkix.Name{CommonName: "PQTunnel local CA"}, NotBefore: now.Add(-5 * time.Minute), NotAfter: now.AddDate(10, 0, 0), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature}
 	caDER, err := x509.CreateCertificate(rand.Reader, caTpl, caTpl, pub, priv)
 	if err != nil {
 		die(err.Error())
@@ -75,12 +74,12 @@ func initCA(args []string) {
 	fmt.Printf("Created CA and server certificate in %s. Keep ca.key offline; never copy it to the server or clients.\n", *out)
 }
 
-func issueServer(out, host string, ca *x509.Certificate, caKey ed25519.PrivateKey) {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+func issueServer(out, host string, ca *x509.Certificate, caKey *mldsa.PrivateKey) {
+	pub, priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		die(err.Error())
 	}
-	tpl := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: host}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	tpl := &x509.Certificate{SerialNumber: serial(), SignatureAlgorithm: x509.MLDSA65, Subject: pkix.Name{CommonName: host}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	if ip, err := netip.ParseAddr(host); err == nil {
 		if ip.Is4() {
 			tpl.IPAddresses = []net.IP{ip.AsSlice()}
@@ -100,7 +99,7 @@ func issueServer(out, host string, ca *x509.Certificate, caKey ed25519.PrivateKe
 	writePrivateKey(filepath.Join(out, "server.key"), priv)
 }
 
-func loadCA(out string) (*x509.Certificate, ed25519.PrivateKey) {
+func loadCA(out string) (*x509.Certificate, *mldsa.PrivateKey) {
 	caPEM, err := os.ReadFile(filepath.Join(out, "ca.crt"))
 	if err != nil {
 		die(err.Error())
@@ -125,7 +124,7 @@ func loadCA(out string) (*x509.Certificate, ed25519.PrivateKey) {
 	if err != nil {
 		die(err.Error())
 	}
-	key, ok := parsed.(ed25519.PrivateKey)
+	key, ok := parsed.(*mldsa.PrivateKey)
 	if !ok {
 		die("ca.key is not an Ed25519 key")
 	}
@@ -135,7 +134,7 @@ func loadCA(out string) (*x509.Certificate, ed25519.PrivateKey) {
 	return ca, key
 }
 
-func validateCAKey(ca *x509.Certificate, key ed25519.PrivateKey) error {
+func validateCAKey(ca *x509.Certificate, key *mldsa.PrivateKey) error {
 	if ca == nil || !ca.IsCA || !ca.BasicConstraintsValid || ca.KeyUsage&x509.KeyUsageCertSign == 0 {
 		return fmt.Errorf("ca.crt is not a valid certificate-signing CA")
 	}
@@ -143,11 +142,11 @@ func validateCAKey(ca *x509.Certificate, key ed25519.PrivateKey) error {
 	if now.Before(ca.NotBefore) || !now.Before(ca.NotAfter) {
 		return fmt.Errorf("ca.crt is not currently valid")
 	}
-	if len(key) != ed25519.PrivateKeySize {
-		return fmt.Errorf("ca.key has an invalid Ed25519 private-key length")
+	if len(key) != *mldsa.PrivateKeySize {
+		return fmt.Errorf("ca.key has an invalid ML-DSA-65 private key")
 	}
-	pub, ok := ca.PublicKey.(ed25519.PublicKey)
-	if !ok || !bytes.Equal(pub, key.Public().(ed25519.PublicKey)) {
+	pub, ok := ca.PublicKey.(*mldsa.PublicKey)
+	if !ok || pub.Parameters() != mldsa.MLDSA65() || !pub.Equal(key.PublicKey()) {
 		return fmt.Errorf("ca.key does not match ca.crt")
 	}
 	return nil
@@ -179,12 +178,13 @@ func issuePeer(args []string) {
 		die("--name is required and must contain 1-64 letters, digits, dot, underscore or hyphen")
 	}
 	ca, caKey := loadCA(*out)
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	pub, priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		die(err.Error())
 	}
 	tpl := &x509.Certificate{
 		SerialNumber: serial(),
+		SignatureAlgorithm: x509.MLDSA65,
 		Subject:      pkix.Name{CommonName: *name, OrganizationalUnit: []string{"PQTunnel peer"}},
 		NotBefore:    time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0),
 		KeyUsage:    x509.KeyUsageDigitalSignature,
@@ -202,12 +202,12 @@ func issuePeer(args []string) {
 	fmt.Printf("Issued peer identity %s. Install only %s.crt, %s.key and ca.crt on the peer; keep ca.key offline.\n", *name, stem, stem)
 }
 
-func issueServerNamed(out, host, stem string, ca *x509.Certificate, caKey ed25519.PrivateKey) {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+func issueServerNamed(out, host, stem string, ca *x509.Certificate, caKey *mldsa.PrivateKey) {
+	pub, priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		die(err.Error())
 	}
-	tpl := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: host}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	tpl := &x509.Certificate{SerialNumber: serial(), SignatureAlgorithm: x509.MLDSA65, Subject: pkix.Name{CommonName: host}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	if ip, err := netip.ParseAddr(host); err == nil {
 		tpl.IPAddresses = []net.IP{ip.AsSlice()}
 	} else {
@@ -245,11 +245,11 @@ func issueClient(args []string) {
 		die("--ip must be a valid IPv4 address")
 	}
 	ca, caKey := loadCA(*out)
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	pub, priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		die(err.Error())
 	}
-	tpl := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: ip.String(), OrganizationalUnit: []string{"PQTunnel client"}}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
+	tpl := &x509.Certificate{SerialNumber: serial(), SignatureAlgorithm: x509.MLDSA65, Subject: pkix.Name{CommonName: ip.String(), OrganizationalUnit: []string{"PQTunnel client"}}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, tpl, ca, pub, caKey)
 	if err != nil {
 		die(err.Error())
@@ -262,7 +262,7 @@ func issueClient(args []string) {
 	fmt.Printf("Issued client %s. Install only %s.crt, %s.key and ca.crt on that device.\n", ip, stem, stem)
 }
 
-func writePrivateKey(path string, key ed25519.PrivateKey) {
+func writePrivateKey(path string, key *mldsa.PrivateKey) {
 	der, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		die(err.Error())
