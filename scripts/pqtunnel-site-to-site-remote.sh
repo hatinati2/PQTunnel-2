@@ -7,13 +7,16 @@ umask 077
 ACTION="$1"
 STAGE="$2"
 VERSION="$3"
-TLS_PORT="$4"
+SERVER_NAME="${5:-}"
 
 fail() { printf 'PQTunnel remote setup: %s\n' "$*" >&2; exit 1; }
 [[ "$(id -u)" == 0 ]] || fail 'connect as root over SSH for the guided installer.'
 [[ "$STAGE" =~ ^/tmp/pqtunnel-site-to-site\.[A-Za-z0-9]+$ ]] || fail 'unsafe staging path.'
 [[ "$VERSION" =~ ^v[0-9A-Za-z._-]+$ ]] || fail 'invalid release version.'
 [[ "$TLS_PORT" =~ ^[0-9]{1,5}$ ]] && (( 10#$TLS_PORT >= 1 && 10#$TLS_PORT <= 65535 )) || fail 'invalid TLS port.'
+if [[ -n "$SERVER_NAME" && ! "$SERVER_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$ ]]; then
+  fail 'invalid Gateway certificate DNS name/IP argument.'
+fi
 
 case "$(uname -m)" in
   x86_64|amd64) ARCH=amd64 ;;
@@ -89,16 +92,15 @@ check_listener_port_free() {
 }
 
 validate_staged_config() {
-  local path cert_hash key_hash
+  local path; local -a verify_args
   [[ -s "$STAGE/gateway-app.env" && -s "$STAGE/gateway-network.env" && -s "$STAGE/gateway-manager-token" && -s "$STAGE/speedtest-token" ]] || fail 'Gateway configuration/token staging is incomplete.'
   [[ -d "$STAGE/gateway-pki" ]] || fail 'Gateway PKI staging directory is missing.'
   chmod 0600 "$STAGE/gateway-manager-token" "$STAGE/speedtest-token"
   for path in server.crt server.key ca.crt; do [[ -s "$STAGE/gateway-pki/$path" ]] || fail "Gateway PKI file is missing: $path"; done
   [[ ! -e "$STAGE/gateway-pki/ca.key" ]] || fail 'CA private key must stay offline; it must not be sent to a server.'
-  openssl verify -purpose sslserver -CAfile "$STAGE/gateway-pki/ca.crt" "$STAGE/gateway-pki/server.crt" >/dev/null || fail 'Gateway server certificate failed CA validation.'
-  cert_hash="$(openssl x509 -in "$STAGE/gateway-pki/server.crt" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}')"
-  key_hash="$(openssl pkey -in "$STAGE/gateway-pki/server.key" -pubout -outform DER | sha256sum | awk '{print $1}')"
-  [[ "$cert_hash" == "$key_hash" ]] || fail 'Gateway certificate/private key mismatch.'
+  verify_args=(verify --purpose server --cert "$STAGE/gateway-pki/server.crt" --key "$STAGE/gateway-pki/server.key" --ca "$STAGE/gateway-pki/ca.crt")
+  [[ -z "$SERVER_NAME" ]] || verify_args+=(--server-name "$SERVER_NAME")
+  "$BUNDLE/pqtunnel-pki" "${verify_args[@]}" || fail 'Gateway ML-DSA server certificate/key validation failed.'
   [[ "$(stat -c '%a' "$STAGE/gateway-pki/server.key")" == 600 ]] || fail 'Gateway private-key staging mode must be 0600.'
   PQTUNNEL_SITE_CONFIG="$STAGE/gateway-network.env" bash "$BUNDLE/scripts/site-to-site-selective.sh" validate >/dev/null
   PQTUNNEL_SITE_CONFIG="$STAGE/gateway-network.env" bash "$BUNDLE/scripts/site-to-site-selective.sh" preview >/dev/null
