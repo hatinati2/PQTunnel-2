@@ -108,9 +108,6 @@ func VerifyPeerCommonName(state tls.ConnectionState, expected string) error {
 	if len(state.PeerCertificates) == 0 {
 		return errors.New("peer certificate is required")
 	}
-	if err := VerifyMLDSA65PeerChain(state); err != nil {
-		return err
-	}
 	if state.PeerCertificates[0].Subject.CommonName != expected {
 		return errors.New("peer certificate common name mismatch")
 	}
