@@ -121,7 +121,8 @@ func waitLocalSetup(ctx context.Context, setup adminapi.NodeSetupController, req
 			}
 			return status, errors.New("setup worker reported failure")
 		}
-		if status.State == "ready" && (!requireBundle || status.BundleAvailable) {
+		setupComplete := status.State == "ready" || (requireBundle && status.State == "waiting-for-peer")
+		if setupComplete && (!requireBundle || status.BundleAvailable) {
 			return status, nil
 		}
 		select {
