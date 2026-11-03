@@ -20,11 +20,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/adminapi"
-	"github.com/hatinati2/PQTunnel/internal/adminipc"
-	"github.com/hatinati2/PQTunnel/internal/portpolicy"
-	"github.com/hatinati2/PQTunnel/internal/prefixset"
-	"github.com/hatinati2/PQTunnel/internal/speedtest"
+	"github.com/hatinati2/PQTunnel-2/internal/adminapi"
+	"github.com/hatinati2/PQTunnel-2/internal/adminipc"
+	"github.com/hatinati2/PQTunnel-2/internal/portpolicy"
+	"github.com/hatinati2/PQTunnel-2/internal/prefixset"
+	"github.com/hatinati2/PQTunnel-2/internal/speedtest"
 )
 
 type Role string
