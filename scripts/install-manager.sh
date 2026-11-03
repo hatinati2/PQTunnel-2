@@ -107,6 +107,7 @@ elif [[ -n "$PANEL_PORT" ]]; then
   fail '--panel-port is available only together with --public-http.'
 fi
 [[ -f "$SOURCE/deploy/systemd/pqtunnel-manager.service" ]] || fail 'deploy/systemd/pqtunnel-manager.service is missing.'
+[[ -f "$SOURCE/deploy/systemd/pqtunnel-agent.service" ]] || fail 'deploy/systemd/pqtunnel-agent.service is missing.'
 [[ -f "$SOURCE/deploy/systemd/pqtunnel-setup.service" ]] || fail 'deploy/systemd/pqtunnel-setup.service is missing.'
 [[ -f "$SOURCE/scripts/pqtunnel-setup-worker.sh" && -f "$SOURCE/scripts/pqtunnel-site-to-site-setup.sh" ]] || fail 'graphical setup worker scripts are missing; use a release containing the setup wizard.'
 [[ -f "$SOURCE/deploy/systemd/pqtunnel-node-setup.service" && -f "$SOURCE/scripts/pqtunnel-node-setup-worker.py" ]] || fail 'standalone node setup worker assets are missing.'
@@ -134,6 +135,7 @@ else
 fi
 
 if (( WITH_NODE_ENDPOINT )); then
+  if [[ "$ROLE" == dialer ]]; then [[ -x "$SOURCE/pqtunnel-agent" ]] || fail 'release bundle lacks pqtunnel-agent.'; fi
   [[ -x "$SOURCE/pqtunnel-pki" && -f "$SOURCE/scripts/pqtunnel-transport-tun.sh" ]] || fail 'release bundle lacks standalone endpoint support.'
   if [[ "$ROLE" == gateway ]]; then
     [[ -x "$SOURCE/pqtunneld" && -f "$SOURCE/deploy/systemd/pqtunneld-transport.service" ]] || fail 'release bundle lacks Gateway transport assets.'
@@ -158,10 +160,12 @@ if (( WITH_NODE_ENDPOINT )); then
 fi
 
 TMPBIN=""
+TMPAGENT=""
+AGENT_BIN_SOURCE=""
 BACKUP_DIR=""
 NEW_MANAGER_TOKEN=""
 NEW_MANAGER_PATH_TOKEN=""
-cleanup() { [[ -z "$TMPBIN" ]] || rm -f "$TMPBIN"; [[ -z "${config_tmp:-}" ]] || rm -f -- "$config_tmp"; unset NEW_MANAGER_TOKEN NEW_MANAGER_PATH_TOKEN; }
+cleanup() { [[ -z "$TMPBIN" ]] || rm -f "$TMPBIN"; [[ -z "$TMPAGENT" ]] || rm -f "$TMPAGENT"; [[ -z "${config_tmp:-}" ]] || rm -f -- "$config_tmp"; unset NEW_MANAGER_TOKEN NEW_MANAGER_PATH_TOKEN; }
 trap cleanup EXIT
 if [[ -f "$SOURCE/go.mod" ]]; then
   command -v go >/dev/null || fail 'Go 1.27+ is required to build from source; use the matching Linux release bundle otherwise.'
@@ -172,9 +176,15 @@ if [[ -f "$SOURCE/go.mod" ]]; then
   TMPBIN="$(mktemp)"
   (cd "$SOURCE" && GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$TMPBIN" ./cmd/pqtunnel-manager)
   BIN_SOURCE="$TMPBIN"
+  if (( WITH_NODE_ENDPOINT )) && [[ "$ROLE" == dialer ]]; then
+    TMPAGENT="$(mktemp)"
+    (cd "$SOURCE" && GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$TMPAGENT" ./cmd/pqtunnel-agent)
+    AGENT_BIN_SOURCE="$TMPAGENT"
+  fi
 elif [[ -f "$SOURCE/pqtunnel-manager" ]]; then
   [[ "$(uname -s)" == Linux ]] || fail 'pqtunnel-manager is Linux/systemd-only.'
   BIN_SOURCE="$SOURCE/pqtunnel-manager"
+  if (( WITH_NODE_ENDPOINT )) && [[ "$ROLE" == dialer ]]; then AGENT_BIN_SOURCE="$SOURCE/pqtunnel-agent"; fi
 else
   fail 'source tree must contain go.mod or release bundle must contain pqtunnel-manager.'
 fi
@@ -190,6 +200,11 @@ fi
 
 install -o root -g root -m 0755 "$BIN_SOURCE" /usr/local/sbin/pqtunnel-manager
 install -o root -g root -m 0644 "$SOURCE/deploy/systemd/pqtunnel-manager.service" /etc/systemd/system/pqtunnel-manager.service
+if (( WITH_NODE_ENDPOINT )) && [[ "$ROLE" == dialer ]]; then
+  [[ -n "$AGENT_BIN_SOURCE" && -x "$AGENT_BIN_SOURCE" ]] || fail 'pqtunnel-agent binary is unavailable.'
+  install -o root -g root -m 0755 "$AGENT_BIN_SOURCE" /usr/local/sbin/pqtunnel-agent
+  install -o root -g root -m 0644 "$SOURCE/deploy/systemd/pqtunnel-agent.service" /etc/systemd/system/pqtunnel-agent.service
+fi
 install -o root -g root -m 0644 "$SOURCE/deploy/systemd/pqtunnel-setup.service" /etc/systemd/system/pqtunnel-setup.service
 install -o root -g root -m 0750 "$SOURCE/scripts/pqtunnel-setup-worker.sh" /usr/local/lib/pqtunnel/pqtunnel-setup-worker.sh
 install -o root -g root -m 0750 "$SOURCE/scripts/pqtunnel-site-to-site-setup.sh" /usr/local/lib/pqtunnel/pqtunnel-site-to-site-setup.sh
@@ -279,6 +294,7 @@ fi
 
 systemctl daemon-reload
 VERIFY_UNITS=(/etc/systemd/system/pqtunnel-manager.service /etc/systemd/system/pqtunnel-setup.service /etc/systemd/system/pqtunnel-node-setup.service)
+if (( WITH_NODE_ENDPOINT )) && [[ "$ROLE" == dialer ]]; then VERIFY_UNITS+=(/etc/systemd/system/pqtunnel-agent.service); fi
 if (( WITH_NODE_ENDPOINT )); then
   if [[ "$ROLE" == gateway ]]; then VERIFY_UNITS+=(/etc/systemd/system/pqtunneld-transport.service); else VERIFY_UNITS+=(/etc/systemd/system/pqtunnel-client-transport.service); fi
 fi
