@@ -86,7 +86,7 @@ func main() {
 	defer cleanupAdminIPC()
 
 	go func() { <-ctx.Done(); _ = dev.Close() }()
-	fmt.Printf("PQTunnel dialer: %s via %s; TLS 1.3 %s key exchange with strict ML-DSA-65 authentication; IPv4/IPv6 packet support\n", *server, *network)
+	fmt.Printf("PQTunnel dialer: %s via %s; TLS 1.3 %s key exchange with strict ML-DSA-65 authentication; IPv4/IPv6 packet support\n", *server, *network, *tlsKEX)
 	err = tunnel.RunClient(ctx, dev, tunnel.ClientConfig{
 		ServerAddress: *server, ServerName: *serverName, Network: *network,
 		LocalIP: ip, LocalPrefixes: localPrefixes, RemotePrefixes: remotePrefixes, AllowedDstPorts: allowedDstPorts, SocketMark: uint32(*socketMark), TLSConfig: tlsCfg,
