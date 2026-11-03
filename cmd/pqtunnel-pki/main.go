@@ -46,10 +46,11 @@ func initCA(args []string) {
 	if err := os.MkdirAll(*out, 0700); err != nil {
 		die(err.Error())
 	}
-	pub, priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		die(err.Error())
 	}
+	pub := priv.PublicKey()
 	now := time.Now()
 	caTpl := &x509.Certificate{SerialNumber: serial(), SignatureAlgorithm: x509.MLDSA65, Subject: pkix.Name{CommonName: "PQTunnel local CA"}, NotBefore: now.Add(-5 * time.Minute), NotAfter: now.AddDate(10, 0, 0), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature}
 	caDER, err := x509.CreateCertificate(rand.Reader, caTpl, caTpl, pub, priv)
@@ -75,10 +76,11 @@ func initCA(args []string) {
 }
 
 func issueServer(out, host string, ca *x509.Certificate, caKey *mldsa.PrivateKey) {
-	pub, priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		die(err.Error())
 	}
+	pub := priv.PublicKey()
 	tpl := &x509.Certificate{SerialNumber: serial(), SignatureAlgorithm: x509.MLDSA65, Subject: pkix.Name{CommonName: host}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	if ip, err := netip.ParseAddr(host); err == nil {
 		if ip.Is4() {
@@ -126,7 +128,7 @@ func loadCA(out string) (*x509.Certificate, *mldsa.PrivateKey) {
 	}
 	key, ok := parsed.(*mldsa.PrivateKey)
 	if !ok {
-		die("ca.key is not an Ed25519 key")
+		die("ca.key is not an ML-DSA-65 key")
 	}
 	if err := validateCAKey(ca, key); err != nil {
 		die(err.Error())
@@ -142,7 +144,7 @@ func validateCAKey(ca *x509.Certificate, key *mldsa.PrivateKey) error {
 	if now.Before(ca.NotBefore) || !now.Before(ca.NotAfter) {
 		return fmt.Errorf("ca.crt is not currently valid")
 	}
-	if len(key) != *mldsa.PrivateKeySize {
+	if key == nil || key.PublicKey().Parameters() != mldsa.MLDSA65() {
 		return fmt.Errorf("ca.key has an invalid ML-DSA-65 private key")
 	}
 	pub, ok := ca.PublicKey.(*mldsa.PublicKey)
@@ -178,10 +180,11 @@ func issuePeer(args []string) {
 		die("--name is required and must contain 1-64 letters, digits, dot, underscore or hyphen")
 	}
 	ca, caKey := loadCA(*out)
-	pub, priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		die(err.Error())
 	}
+	pub := priv.PublicKey()
 	tpl := &x509.Certificate{
 		SerialNumber: serial(),
 		SignatureAlgorithm: x509.MLDSA65,
@@ -203,10 +206,11 @@ func issuePeer(args []string) {
 }
 
 func issueServerNamed(out, host, stem string, ca *x509.Certificate, caKey *mldsa.PrivateKey) {
-	pub, priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		die(err.Error())
 	}
+	pub := priv.PublicKey()
 	tpl := &x509.Certificate{SerialNumber: serial(), SignatureAlgorithm: x509.MLDSA65, Subject: pkix.Name{CommonName: host}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	if ip, err := netip.ParseAddr(host); err == nil {
 		tpl.IPAddresses = []net.IP{ip.AsSlice()}
@@ -245,10 +249,11 @@ func issueClient(args []string) {
 		die("--ip must be a valid IPv4 address")
 	}
 	ca, caKey := loadCA(*out)
-	pub, priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
+	priv, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil {
 		die(err.Error())
 	}
+	pub := priv.PublicKey()
 	tpl := &x509.Certificate{SerialNumber: serial(), SignatureAlgorithm: x509.MLDSA65, Subject: pkix.Name{CommonName: ip.String(), OrganizationalUnit: []string{"PQTunnel client"}}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(1, 0, 0), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, tpl, ca, pub, caKey)
 	if err != nil {
