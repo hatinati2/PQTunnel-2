@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 umask 077
 VERSION="${PQTUNNEL_SETUP_VERSION:-v0.4.0-pqalpha.1}"
-REPO=hatinati2/PQTunnel
+REPO=hatinati2/PQTunnel-2
 REL="https://github.com/$REPO/releases/download/$VERSION"
 # Fetch the remote half from the same immutable release tag as the checked bundle.
 RAW="https://raw.githubusercontent.com/$REPO/$VERSION"
