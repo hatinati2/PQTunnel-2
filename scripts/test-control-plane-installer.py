@@ -49,7 +49,7 @@ class ControlPlaneInstallerTests(unittest.TestCase):
     def test_documented_gateway_command_is_single_line_and_pinned(self) -> None:
         self.assertRegex(
             self.doc,
-            re.compile(r'curl -fsSL https://raw\.githubusercontent\.com/hatinati2/PQTunnel-2/COMMIT_SHA/scripts/pqtunnel-control-install\.sh \| sudo bash -s -- --ref COMMIT_SHA --role gateway --public-host YOUR_PUBLIC_IPV4 --panel-port 6100')
+            re.compile(r'curl -fsSL https://raw\.githubusercontent\.com/hatinati2/PQTunnel-2/COMMIT_SHA/scripts/pqtunnel-control-install\.sh \| sudo bash -s -- --ref COMMIT_SHA --role gateway --panel-domain control\.example\.com --panel-port 6100')
         )
 
     def test_manager_installer_refuses_public_plaintext_http(self) -> None:

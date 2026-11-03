@@ -10,12 +10,12 @@ Usage:
   sudo bash ./scripts/install-manager.sh --source /path/to/Linux-bundle --role gateway
   sudo bash ./scripts/install-manager.sh --source /path/to/Linux-bundle --role dialer
   sudo bash ./scripts/install-manager.sh --source /path/to/Linux-bundle --role dialer --upgrade
-  sudo bash ./scripts/install-manager.sh --source /path/to/Linux-bundle --role dialer --with-node-endpoint --public-tls --public-host 203.0.113.10 --upgrade
+  sudo bash ./scripts/install-manager.sh --source /path/to/Linux-bundle --role gateway --with-node-endpoint --public-tls --public-host control.example.com --tls-cert /etc/letsencrypt/live/control.example.com/fullchain.pem --tls-key /etc/letsencrypt/live/control.example.com/privkey.pem --panel-port 6100
 
 The default manager listener is loopback-only. Public HTTPS requires --public-tls
 and --public-host. Its TCP port can be selected with --panel-port (default 6100);
 on an interactive terminal the installer asks before using the default.
-Public HTTPS is unencrypted: the secret URL path is not a substitute for TLS.
+Public TLS encrypts the browser session. The secret URL path is an additional discovery barrier, not a replacement for login authentication.
 With --with-node-endpoint, role-specific binaries and transport-only systemd units
 are installed but not enabled or started. Existing tunnel configurations are
 never overwritten by this installer.
