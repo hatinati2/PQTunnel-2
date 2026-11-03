@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/hatinati2/PQTunnel-2/internal/adminui"
+	"github.com/hatinati2/PQTunnel-2/internal/fleet"
+	"github.com/hatinati2/PQTunnel-2/internal/fleetui"
 	"github.com/hatinati2/PQTunnel-2/internal/manager"
 	"github.com/hatinati2/PQTunnel-2/internal/speedtest"
 )
@@ -63,11 +65,31 @@ func main() {
 		EndpointMode: os.Getenv("PQTUNNEL_MANAGER_ENDPOINT_MODE"),
 	})
 	fatalIf(err)
-	handler, err := adminui.NewWithPublicAccess(token, controller, publicHost, allowInsecurePublicHTTP)
-	fatalIf(err)
-	var panelHandler http.Handler = handler
+	var panelHandler http.Handler
+	if role == manager.RoleGateway {
+		statePath := envString("PQTUNNEL_FLEET_STATE", "/var/lib/pqtunnel-manager/fleet-state.json")
+		broker, err := fleet.NewBroker(statePath)
+		fatalIf(err)
+		coordinator, err := fleet.NewCoordinator(controller, broker)
+		fatalIf(err)
+		handler, err := fleetui.New(
+			token,
+			coordinator,
+			os.Getenv("PQTUNNEL_MANAGER_PUBLIC_URL"),
+			os.Getenv("PQTUNNEL_MANAGER_INSTALL_REF"),
+		)
+		fatalIf(err)
+		mux := http.NewServeMux()
+		mux.Handle("/agent/", broker.Handler())
+		mux.Handle("/", handler)
+		panelHandler = mux
+	} else {
+		handler, err := adminui.NewWithPublicAccess(token, controller, publicHost, allowInsecurePublicHTTP)
+		fatalIf(err)
+		panelHandler = handler
+	}
 	if pathToken != "" {
-		panelHandler, err = adminui.WithPathToken(pathToken, handler)
+		panelHandler, err = adminui.WithPathToken(pathToken, panelHandler)
 		fatalIf(err)
 	}
 
