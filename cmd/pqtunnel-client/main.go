@@ -23,6 +23,7 @@ func main() {
 	server := flag.String("server", "", "remote endpoint host:port, IPv4:port, or [IPv6]:port")
 	serverName := flag.String("server-name", "", "TLS certificate DNS name or IP SAN; required even when --server is an IP")
 	network := flag.String("network", "tcp", "transport network: tcp (automatic IPv4/IPv6), tcp4, or tcp6")
+	tlsKEX := flag.String("tls-key-exchange", envString("PQTUNNEL_TLS_KEX", "hybrid"), "TLS 1.3 key exchange: hybrid or pure-pq (experimental)")
 	caPath := flag.String("ca", "pki/ca.crt", "CA certificate PEM")
 	certPath := flag.String("cert", "pki/client.crt", "client/peer certificate PEM")
 	keyPath := flag.String("key", "pki/client.key", "client/peer private key PEM")
@@ -64,7 +65,8 @@ func main() {
 	}
 	cert, err := tls.LoadX509KeyPair(*certPath, *keyPath)
 	fatalIf(err)
-	tlsCfg := tunnel.StrictTLS13Config()
+	tlsCfg, err := tunnel.TLS13ConfigForMode(tunnel.TLSKeyExchangeMode(*tlsKEX))
+	fatalIf(err)
 	tlsCfg.RootCAs = roots
 	tlsCfg.Certificates = []tls.Certificate{cert}
 	tlsCfg.ServerName = *serverName
@@ -84,7 +86,7 @@ func main() {
 	defer cleanupAdminIPC()
 
 	go func() { <-ctx.Done(); _ = dev.Close() }()
-	fmt.Printf("PQTunnel dialer: %s via %s; TLS 1.3 strict hybrid X25519MLKEM768; IPv4/IPv6 packet support\n", *server, *network)
+	fmt.Printf("PQTunnel dialer: %s via %s; TLS 1.3 %s key exchange with strict ML-DSA-65 authentication; IPv4/IPv6 packet support\n", *server, *network)
 	err = tunnel.RunClient(ctx, dev, tunnel.ClientConfig{
 		ServerAddress: *server, ServerName: *serverName, Network: *network,
 		LocalIP: ip, LocalPrefixes: localPrefixes, RemotePrefixes: remotePrefixes, AllowedDstPorts: allowedDstPorts, SocketMark: uint32(*socketMark), TLSConfig: tlsCfg,
@@ -93,6 +95,13 @@ func main() {
 	if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, os.ErrClosed) {
 		fatalIf(err)
 	}
+}
+
+func envString(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func envUint(name string, fallback uint) uint {
