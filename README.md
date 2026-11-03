@@ -30,7 +30,7 @@ Select the mode on both daemon and client with `--tls-key-exchange` or `PQTUNNEL
 - Go **1.27 or newer** is required. Go 1.27 adds the standard-library `crypto/mldsa` package and ML-DSA support in X.509 and TLS 1.3.
 - Linux MVP target: Ubuntu 24.04/26.04, amd64 and arm64.
 - TLS 1.3 is the only enabled TLS version.
-- The standalone PKI tool generates ML-DSA-65 keys and X.509 certificates. Keep the CA private key offline.
+- The standalone PKI tool generates ML-DSA-65 keys and X.509 certificates. Its `verify` subcommand checks the endpoint certificate chain, SAN/CN, EKU, key match, ML-DSA-65 algorithms and private-key permissions using Go's X.509/TLS implementation; it does not rely on the host OpenSSL version. This keeps certificate validation compatible with Ubuntu 24.04's stock OpenSSL 3.0. Keep the CA private key offline.
 
 ## Build and test
 
@@ -54,6 +54,7 @@ chmod 700 "$tmp"
 go run ./cmd/pqtunnel-pki init --out "$tmp/pki" --server-name vpn.example.test
 go run ./cmd/pqtunnel-pki issue-client --out "$tmp/pki" --ip 192.0.2.10
 go run ./cmd/pqtunnel-pki issue-peer --out "$tmp/pki" --name peer-fixture
+go run ./cmd/pqtunnel-pki verify --purpose server --cert "$tmp/pki/server.crt" --key "$tmp/pki/server.key" --ca "$tmp/pki/ca.crt" --server-name vpn.example.test
 ```
 
 The example client address is from the documentation-only TEST-NET range and is not an endpoint to connect to. Use your own deployment values only at runtime, through protected configuration; never copy operator addresses, credentials, tokens, certificates, or private keys into source files, tests, fixtures, CI, screenshots, or logs.
