@@ -79,7 +79,7 @@ func TestRunAgainstTunnelAgentReportsRTTAndBidirectionalThroughput(t *testing.T)
 
 func TestRunRejectsPublicTargetsAndOversizedRequests(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef"
-	if _, err := Run(context.Background(), "8.8.8.8:9109", token, 1); err == nil {
+	if _, err := Run(context.Background(), "192.0.2.4:9109", token, 1); err == nil {
 		t.Fatal("public endpoint must be rejected before dialing")
 	}
 	if _, err := Run(context.Background(), "10.66.0.2:9109", token, MaxMiB+1); err == nil {
