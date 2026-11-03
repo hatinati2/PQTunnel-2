@@ -228,3 +228,20 @@ func newEnrollmentReply(token string, publicKeyText string, credentials Credenti
 		Ciphertext: envelope.Ciphertext,
 	}, nil
 }
+
+func CompleteEnrollmentForAgent(token string, privateKey *ecdh.PrivateKey, response EnrollResponse) (Credentials, error) {
+	return completeEnrollment(token, privateKey, response)
+}
+
+func SealForAgent(key []byte, nodeID string, value any) (Envelope, error) {
+	envelope, err := seal(key, value)
+	if err != nil {
+		return Envelope{}, err
+	}
+	envelope.NodeID = nodeID
+	return envelope, nil
+}
+
+func OpenForAgent(key []byte, envelope Envelope, dst any) error {
+	return openEnvelope(key, envelope, dst)
+}
