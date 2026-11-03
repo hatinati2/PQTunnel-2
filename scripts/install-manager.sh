@@ -63,6 +63,12 @@ elif [[ -n "$PUBLIC_HOST" ]]; then
   fail '--public-host requires --public-http.'
 fi
 if (( PUBLIC_HTTP )); then
+  if (( UPGRADE )) && [[ -z "$PANEL_PORT" && -f /etc/default/pqtunnel-manager ]]; then
+    existing_listen_for_port="$(sed -n 's/^PQTUNNEL_MANAGER_LISTEN=//p' /etc/default/pqtunnel-manager | head -n1)"
+    if [[ "$existing_listen_for_port" =~ ^0\.0\.0\.0:([0-9]+)$ ]]; then
+      PANEL_PORT="${BASH_REMATCH[1]}"
+    fi
+  fi
   if [[ -z "$PANEL_PORT" && -t 0 ]]; then
     read -r -p 'Choose the public HTTP panel TCP port [6100]: ' PANEL_PORT
   fi
@@ -76,7 +82,7 @@ if not 1 <= value <= 65535:
 print(value)
 PY
 )" || fail '--panel-port must be a decimal TCP port from 1 to 65535.'
-  python3 - "$PANEL_PORT" <<'PY'
+  if ! python3 - "$PANEL_PORT" <<'PY'
 import socket, sys
 port = int(sys.argv[1])
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -87,7 +93,9 @@ except OSError as exc:
 finally:
     sock.close()
 PY
-  [[ $? -eq 0 ]] || fail 'the selected panel TCP port is already in use or cannot be bound.'
+  then
+    fail 'the selected panel TCP port is already in use or cannot be bound.'
+  fi
 elif [[ -n "$PANEL_PORT" ]]; then
   fail '--panel-port is available only together with --public-http.'
 fi
@@ -250,10 +258,14 @@ ENV
   if (( WITH_NODE_ENDPOINT )); then
     printf 'PQTUNNEL_MANAGER_ENDPOINT_MODE=transport\n' >> /etc/default/pqtunnel-manager
   fi
-  cat >> /etc/default/pqtunnel-manager <<ENV
-PQTUNNEL_MANAGER_TOKEN=
-PQTUNNEL_SETUP_VERSION=$SOURCE_VERSION
-ENV
+  if (( PUBLIC_HTTP )); then
+    NEW_MANAGER_TOKEN="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \\n')"
+    [[ "$NEW_MANAGER_TOKEN" =~ ^[0-9a-f]{64}$ ]] || fail 'could not generate a manager login token; installation stopped.'
+    printf 'PQTUNNEL_MANAGER_TOKEN=%s\\n' "$NEW_MANAGER_TOKEN" >> /etc/default/pqtunnel-manager
+  else
+    printf 'PQTUNNEL_MANAGER_TOKEN=\\n' >> /etc/default/pqtunnel-manager
+  fi
+  printf 'PQTUNNEL_SETUP_VERSION=%s\\n' "$SOURCE_VERSION" >> /etc/default/pqtunnel-manager
   chown root:root /etc/default/pqtunnel-manager
   chmod 0600 /etc/default/pqtunnel-manager
 fi
@@ -313,7 +325,15 @@ if (( UPGRADE )); then
     echo "Existing manager token and role were preserved."
   fi
 else
-  echo 'PQTunnel manager installed; the top-level installer will assign the token and start the panel.'
+  if (( PUBLIC_HTTP )); then
+    systemctl enable --now pqtunnel-manager || fail 'manager could not start; inspect systemctl status pqtunnel-manager and journalctl -u pqtunnel-manager.'
+    path_token="$(sed -n 's/^PQTUNNEL_MANAGER_PATH_TOKEN=//p' /etc/default/pqtunnel-manager | head -n1)"
+    printf '\\nPublic HTTP panel is active at:\\nhttp://%s:%s/%s/\\n' "$PUBLIC_HOST" "$PANEL_PORT" "$path_token"
+    printf 'Save this login token now; it is not shown again:\\nPQTUNNEL_MANAGER_TOKEN=%s\\n' "$NEW_MANAGER_TOKEN"
+    unset NEW_MANAGER_TOKEN
+  else
+    echo 'PQTunnel manager installed; the top-level installer will assign the token and start the panel.'
+  fi
   if (( WITH_NODE_ENDPOINT )); then echo "Standalone endpoint assets installed for role $ROLE; tunnel service remains stopped and disabled."; fi
 fi
 if (( PUBLIC_HTTP )); then
