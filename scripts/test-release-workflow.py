@@ -33,7 +33,7 @@ class ReleaseProxyWorkflowTests(unittest.TestCase):
 
     def test_proxy_binary_is_packaged_for_each_supported_release_architecture(self) -> None:
         self.assertIn(
-            "for cmd in pqtunneld pqtunnel-client pqtunnel-pki pqtunnel-proxy; do",
+            "for cmd in pqtunneld pqtunnel-client pqtunnel-pki pqtunnel-proxy pqtunnel-agent; do",
             self.bundle_builder,
         )
         self.assertIn("pqtunnel-manager", self.bundle_builder)
