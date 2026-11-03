@@ -10,7 +10,7 @@ import (
 	"net/netip"
 	"os"
 
-	"github.com/hatinati2/PQTunnel/internal/tunnel"
+	"github.com/hatinati2/PQTunnel-2/internal/tunnel"
 )
 
 // SocketProtector is implemented by the Android VpnService wrapper so the transport socket
