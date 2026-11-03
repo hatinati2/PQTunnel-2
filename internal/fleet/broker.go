@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,8 +18,9 @@ import (
 )
 
 type pendingCall struct {
-	command Command
-	result  chan CommandResult
+	command   Command
+	result    chan CommandResult
+	createdAt time.Time
 }
 
 type nodeState struct {
@@ -173,6 +173,9 @@ func (b *Broker) Enroll(req EnrollRequest) (EnrollResponse, error) {
 	if _, exists := b.nodes[req.NodeID]; exists {
 		return EnrollResponse{}, errors.New("this Dialer is already registered")
 	}
+	if len(b.nodes) != 0 {
+		return EnrollResponse{}, errors.New("this Gateway supports one Dialer peer in the current site-to-site mode")
+	}
 	keyHex, err := randomHex(32)
 	if err != nil {
 		return EnrollResponse{}, err
@@ -287,7 +290,7 @@ func (b *Broker) Execute(ctx context.Context, command Command) (CommandResult, e
 		return CommandResult{}, errors.New("Dialer agent is offline; it must reconnect before remote management")
 	}
 	if node.Pending != nil {
-		if time.Since(node.LastSeen) > 30*time.Second {
+		if time.Since(node.Pending.createdAt) > 3*time.Minute {
 			node.Pending = nil
 		} else {
 			b.mu.Unlock()
@@ -295,7 +298,7 @@ func (b *Broker) Execute(ctx context.Context, command Command) (CommandResult, e
 		}
 	}
 	resultCh := make(chan CommandResult, 1)
-	node.Pending = &pendingCall{command: command, result: resultCh}
+	node.Pending = &pendingCall{command: command, result: resultCh, createdAt: time.Now()}
 	b.mu.Unlock()
 
 	select {
@@ -380,4 +383,3 @@ func ReadJSONBody(r io.Reader, limit int64, dst any) error {
 	return json.Unmarshal(data, dst)
 }
 
-var _ = strings.TrimSpace
