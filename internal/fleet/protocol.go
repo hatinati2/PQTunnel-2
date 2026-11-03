@@ -164,7 +164,7 @@ func openEnvelope(key []byte, envelope Envelope, dst any) error {
 	return nil
 }
 
-func deriveEnrollmentKey(shared, token string) []byte {
+func deriveEnrollmentKey(shared []byte, token string) []byte {
 	hash := sha256.New()
 	_, _ = hash.Write([]byte("PQTunnel fleet enrollment v1"))
 	_, _ = hash.Write([]byte{0})
