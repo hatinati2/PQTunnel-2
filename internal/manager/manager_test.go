@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hatinati2/PQTunnel/internal/adminapi"
+	"github.com/hatinati2/PQTunnel-2/internal/adminapi"
 )
 
 type fakeRunner struct {
