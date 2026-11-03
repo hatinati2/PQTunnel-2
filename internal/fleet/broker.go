@@ -315,6 +315,14 @@ func (b *Broker) Execute(ctx context.Context, command Command) (CommandResult, e
 		}
 		return result, nil
 	case <-ctx.Done():
+		b.mu.Lock()
+		if current := b.nodes[node.ID]; current == node && current.Pending != nil && current.Pending.command.ID == command.ID {
+			// Do not leave an undelivered command queued after its operator has
+			// already received a timeout response. Poll and cancellation share
+			// this lock, so a command not yet returned by Poll is now discarded.
+			current.Pending = nil
+		}
+		b.mu.Unlock()
 		return CommandResult{}, errors.New("remote operation timed out or was cancelled; check Dialer status before retrying")
 	}
 }

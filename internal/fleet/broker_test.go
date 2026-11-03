@@ -106,6 +106,24 @@ func TestEnrollmentEncryptedPollingCommandAndReplayProtection(t *testing.T) {
 	info, err := os.Stat(statePath)
 	if err != nil { t.Fatal(err) }
 	if info.Mode().Perm() != 0600 { t.Fatalf("fleet state mode=%o, want 0600", info.Mode().Perm()) }
+
+	cancelledCtx, cancelPending := context.WithCancel(context.Background())
+	cancelPending()
+	if _, err := broker.Execute(cancelledCtx, Command{Action: "stop"}); err == nil {
+		t.Fatal("expected cancelled remote operation to return an error")
+	}
+	request.Sequence = time.Now().UnixNano()
+	request.Timestamp = time.Now().Unix()
+	request.Result = nil
+	cancelledEnvelope, err := SealForAgent(key, nodeID, request)
+	if err != nil { t.Fatal(err) }
+	cancelledReply, err := broker.Poll(cancelledEnvelope)
+	if err != nil { t.Fatal(err) }
+	var cancelledResponse AgentResponse
+	if err := OpenForAgent(key, cancelledReply, &cancelledResponse); err != nil { t.Fatal(err) }
+	if cancelledResponse.Command != nil {
+		t.Fatalf("cancelled, undelivered command was still queued: %#v", cancelledResponse.Command)
+	}
 }
 
 func decodeHexKey(value string) ([]byte, error) {

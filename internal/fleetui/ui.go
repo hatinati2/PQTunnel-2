@@ -121,6 +121,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;ba
 </section>
 <section class="section"><h2>Gateway · سرور مرکزی</h2>
 <div class="kv"><span>systemd</span><b>{{.Gateway.ServiceStatus}} / {{.Gateway.SubState}}</b><span>PID</span><b>{{.Gateway.Snapshot.MainPID}}</b><span>Listen</span><b class="code">{{.Gateway.Snapshot.Config.ListenAddress}}</b><span>Peer prefixes</span><b class="code">{{.Gateway.Snapshot.Config.PeerPrefixes}}</b><span>Local prefixes</span><b class="code">{{.Gateway.Snapshot.Config.LocalPrefixes}}</b></div>
+{{if .Gateway.ConfigError}}<div class="notice error">خطای پیکربندی Gateway: {{.Gateway.ConfigError}}</div>{{end}}
 <div class="actions">
 <form method="post" action="/action"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="role" value="gateway"><input type="hidden" name="action" value="start"><input type="hidden" name="confirm" value="yes"><button class="primary">روشن</button></form>
 <form method="post" action="/action"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="role" value="gateway"><input type="hidden" name="action" value="restart"><input type="hidden" name="confirm" value="yes"><button>اتصال مجدد</button></form>
@@ -128,6 +129,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;ba
 </div></section>
 <section class="section"><h2>Dialer · سرور راه‌دور</h2>
 <div class="kv"><span>Agent</span><b>{{.Dialer.AgentStatus}}</b><span>آخرین ارتباط</span><b>{{.Dialer.LastSeen}}</b><span>systemd</span><b>{{.Dialer.ServiceStatus}} / {{.Dialer.SubState}}</b><span>PID</span><b>{{.Dialer.Snapshot.MainPID}}</b><span>Gateway</span><b class="code">{{.Dialer.Snapshot.Config.ServerAddress}}</b><span>نام گواهی</span><b>{{.Dialer.Snapshot.Config.ServerName}}</b></div>
+{{if .Dialer.ConfigError}}<div class="notice error">خطای پیکربندی Dialer: {{.Dialer.ConfigError}}</div>{{end}}
 <div class="actions">
 <form method="post" action="/action"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="role" value="dialer"><input type="hidden" name="action" value="start"><input type="hidden" name="confirm" value="yes"><button class="primary" {{if not .Dialer.AgentOnline}}disabled{{end}}>روشن</button></form>
 <form method="post" action="/action"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="role" value="dialer"><input type="hidden" name="action" value="restart"><input type="hidden" name="confirm" value="yes"><button {{if not .Dialer.AgentOnline}}disabled{{end}}>اتصال مجدد</button></form>
@@ -259,10 +261,10 @@ func (h *Handler) handleAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported operation", http.StatusBadRequest); return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second); defer cancel()
-	_, err := h.coordinator.Execute(ctx, role, fleet.Command{Action: action})
-	notice := role + " " + action + " completed"
-	detail := ""
-	if err != nil { notice = ""; detail = err.Error() }
+	result, err := h.coordinator.Execute(ctx, role, fleet.Command{Action: action})
+	detail := operationFailure(result, err)
+	notice := ""
+	if detail == "" { notice = role + " " + action + " completed" }
 	h.renderDashboard(w, r, current.CSRF, notice, detail, nil, "", "")
 }
 
@@ -287,10 +289,10 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 		AllowedDstPorts: r.PostForm.Get("allowed_dst_ports"),
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 70*time.Second); defer cancel()
-	_, err := h.coordinator.Execute(ctx, role, fleet.Command{Action: "config", Config: config})
-	notice := role + " configuration applied"
-	detail := ""
-	if err != nil { notice = ""; detail = err.Error() }
+	result, err := h.coordinator.Execute(ctx, role, fleet.Command{Action: "config", Config: config})
+	detail := operationFailure(result, err)
+	notice := ""
+	if detail == "" { notice = role + " configuration applied" }
 	h.renderDashboard(w, r, current.CSRF, notice, detail, nil, "", "")
 }
 
@@ -305,9 +307,9 @@ func (h *Handler) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if role != "gateway" && role != "dialer" { http.Error(w, "invalid role", http.StatusBadRequest); return }
 	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second); defer cancel()
 	result, err := h.coordinator.Execute(ctx, role, fleet.Command{Action: "logs"})
-	detail, logs := "", ""
-	if err != nil { detail = err.Error() } else { logs = result.Logs }
-	h.renderDashboard(w, r, current.CSRF, "", detail, nil, role+" logs", logs)
+	detail, logs, logsTitle := operationFailure(result, err), "", ""
+	if detail == "" { logs, logsTitle = result.Logs, role+" logs" }
+	h.renderDashboard(w, r, current.CSRF, "", detail, nil, logsTitle, logs)
 }
 
 func (h *Handler) handlePair(w http.ResponseWriter, r *http.Request) {
@@ -436,6 +438,19 @@ func randomToken() (string, error) {
 	value := make([]byte, 32)
 	if _, err := rand.Read(value); err != nil { return "", err }
 	return hex.EncodeToString(value), nil
+}
+
+func operationFailure(result fleet.CommandResult, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	if !result.Success {
+		if strings.TrimSpace(result.Message) != "" {
+			return result.Message
+		}
+		return "management operation failed without a diagnostic message"
+	}
+	return ""
 }
 
 func methodNotAllowed(w http.ResponseWriter, allow string) { w.Header().Set("Allow", allow); http.Error(w, "method not allowed", http.StatusMethodNotAllowed) }

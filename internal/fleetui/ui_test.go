@@ -17,12 +17,17 @@ import (
 type fakeCoordinator struct {
 	snapshot fleet.DashboardSnapshot
 	invite string
+	executeResult fleet.CommandResult
+	executeErr error
 }
 
 func (f *fakeCoordinator) Snapshot() fleet.DashboardSnapshot { return f.snapshot }
 func (f *fakeCoordinator) CreateInvite() (string, time.Time, error) { return f.invite, time.Now().Add(15*time.Minute), nil }
 func (f *fakeCoordinator) Execute(_ context.Context, role string, command fleet.Command) (fleet.CommandResult, error) {
-	return fleet.CommandResult{Success: true, Logs: "test logs"}, nil
+	if f.executeResult.Success || f.executeResult.Message != "" || f.executeResult.Logs != "" {
+		return f.executeResult, f.executeErr
+	}
+	return fleet.CommandResult{Success: true, Logs: "test logs"}, f.executeErr
 }
 func (f *fakeCoordinator) PairNodes(context.Context, string, int, string, string) error { return nil }
 
@@ -118,4 +123,72 @@ func TestMobileFleetRejectsCrossOriginActions(t *testing.T) {
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, req)
 	if resp.Code != http.StatusForbidden { t.Fatalf("cross-origin action status=%d", resp.Code) }
+}
+
+
+func TestMobileFleetDisplaysGatewayOperationAndConfigurationErrors(t *testing.T) {
+	const loginToken = "fleet-panel-login-token-with-at-least-32-bytes"
+	coordinator := &fakeCoordinator{
+		snapshot: fleet.DashboardSnapshot{
+			Gateway: adminapi.ManagerSnapshot{
+				Role: "gateway",
+				ConfigError: "invalid Gateway prefix",
+			},
+			Dialer: fleet.NodeSnapshot{
+				Connected: true,
+				Snapshot: adminapi.ManagerSnapshot{
+					Role: "dialer",
+					ConfigError: "invalid Dialer server address",
+				},
+			},
+		},
+		executeResult: fleet.CommandResult{Success: false, Message: "systemd restart failed"},
+	}
+	h, err := New(loginToken, coordinator, "http://198.51.100.10:6100/"+strings.Repeat("b", 64), strings.Repeat("d", 40))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	loginValues := url.Values{"token": {loginToken}}
+	loginReq := httptest.NewRequest(http.MethodPost, "http://198.51.100.10:6100/login", strings.NewReader(loginValues.Encode()))
+	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	loginReq.Header.Set("Origin", "http://198.51.100.10:6100")
+	loginResp := httptest.NewRecorder()
+	h.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusSeeOther {
+		t.Fatalf("login status=%d body=%s", loginResp.Code, loginResp.Body.String())
+	}
+	cookie := loginResp.Result().Cookies()[0]
+
+	dashboardReq := httptest.NewRequest(http.MethodGet, "http://198.51.100.10:6100/", nil)
+	dashboardReq.AddCookie(cookie)
+	dashboardResp := httptest.NewRecorder()
+	h.ServeHTTP(dashboardResp, dashboardReq)
+	body := dashboardResp.Body.String()
+	for _, want := range []string{"invalid Gateway prefix", "invalid Dialer server address"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dashboard did not display configuration error %q", want)
+		}
+	}
+	csrf := regexp.MustCompile(`name="csrf" value="([^"]+)"`).FindStringSubmatch(body)
+	if len(csrf) != 2 {
+		t.Fatal("dashboard did not render CSRF values")
+	}
+
+	actionValues := url.Values{
+		"csrf": {csrf[1]}, "role": {"gateway"}, "action": {"restart"}, "confirm": {"yes"},
+	}
+	actionReq := httptest.NewRequest(http.MethodPost, "http://198.51.100.10:6100/action", strings.NewReader(actionValues.Encode()))
+	actionReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	actionReq.Header.Set("Origin", "http://198.51.100.10:6100")
+	actionReq.AddCookie(cookie)
+	actionResp := httptest.NewRecorder()
+	h.ServeHTTP(actionResp, actionReq)
+	actionBody := actionResp.Body.String()
+	if !strings.Contains(actionBody, "systemd restart failed") {
+		t.Fatalf("operation failure was not shown: %s", actionBody)
+	}
+	if strings.Contains(actionBody, "gateway restart completed") {
+		t.Fatal("failed Gateway operation was reported as successful")
+	}
 }

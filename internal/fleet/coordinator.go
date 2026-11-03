@@ -43,7 +43,14 @@ func (c *Coordinator) CreateInvite() (string, time.Time, error) {
 func (c *Coordinator) Execute(ctx context.Context, role string, command Command) (CommandResult, error) {
 	switch role {
 	case "gateway":
-		return ExecuteLocal(ctx, c.local, command), nil
+		result := ExecuteLocal(ctx, c.local, command)
+		if !result.Success {
+			if result.Message == "" {
+				return result, errors.New("local management operation failed without a diagnostic message")
+			}
+			return result, errors.New(result.Message)
+		}
+		return result, nil
 	case "dialer":
 		return c.broker.Execute(ctx, command)
 	default:
