@@ -200,7 +200,7 @@ main(){
  missing=(); for pair in 'ip:iproute2' 'nft:nftables' 'openssl:openssl' 'sysctl:procps' 'ss:iproute2' 'systemctl:systemd' 'systemd-analyze:systemd'; do c="${pair%%:*}"; p="${pair#*:}"; command -v "$c" >/dev/null 2>&1 || missing+=("$p"); done
  if ((${#missing[@]})); then apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl tar python3 "${missing[@]}"; fi
  ssh -p "$SSH_PORT" "$REMOTE" 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl tar openssl iproute2 nftables procps systemd'
- bash "$BUNDLE/scripts/site-to-site-preflight.sh" --role dialer
+ PQTUNNEL_PKI_BIN="$BUNDLE/pqtunnel-pki" PQTUNNEL_PREFLIGHT_PEER_NAME=10.66.0.2 bash "$BUNDLE/scripts/site-to-site-preflight.sh" --role dialer
  WAN="$(ip -o route get "$GATEWAY_IP" | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1);exit}}')"; [[ -n "$WAN" ]] || WAN="$(ip -o route show default | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1);exit}}')"
  ask "Iran WAN interface [$WAN]: " tmp; WAN="${tmp:-$WAN}"; ifname "$WAN" && ip link show dev "$WAN" >/dev/null 2>&1 || fail 'Invalid Iran WAN interface.'
  GW_WAN="$(ssh -p "$SSH_PORT" "$REMOTE" "ip -o route show default | awk '{for(i=1;i<=NF;i++) if(\\$i==\\"dev\\"){print \\$(i+1);exit}}'")"
