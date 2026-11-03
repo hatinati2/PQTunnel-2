@@ -5,8 +5,8 @@ package main
 import (
 	"context"
 
-	"github.com/hatinati2/PQTunnel/internal/adminapi"
-	"github.com/hatinati2/PQTunnel/internal/adminipc"
+	"github.com/hatinati2/PQTunnel-2/internal/adminapi"
+	"github.com/hatinati2/PQTunnel-2/internal/adminipc"
 )
 
 const clientControlSocket = "/run/pqtunnel/client-control.sock"
