@@ -203,7 +203,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !ok { return }
 		if !h.validCSRF(r, current) { http.Error(w, "invalid request", http.StatusForbidden); return }
 		h.mu.Lock(); delete(h.sessions, id); h.mu.Unlock()
-		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
+		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	case "/invite":
 		if r.Method != http.MethodPost { methodNotAllowed(w, "POST"); return }
@@ -351,7 +351,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	for old, s := range h.sessions { if time.Now().After(s.Expires) { delete(h.sessions, old) } }
 	h.sessions[id] = session{CSRF: csrf, Expires: expires}
 	h.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: id, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Expires: expires, MaxAge: int(sessionTTL.Seconds())})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: id, Path: "/", HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, Expires: expires, MaxAge: int(sessionTTL.Seconds())})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
