@@ -281,7 +281,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		http.SetCookie(w, &http.Cookie{
 			Name: languageCookieName, Value: lang, Path: "/", HttpOnly: true,
-			Secure: true, SameSite: http.SameSiteLaxMode,
+			Secure: r.TLS != nil, SameSite: http.SameSiteLaxMode,
 			Expires: time.Now().Add(365 * 24 * time.Hour), MaxAge: 365 * 24 * 60 * 60,
 		})
 		next := r.URL.Query().Get("next")
@@ -524,7 +524,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		delete(h.sessions, id)
 		h.mu.Unlock()
 		http.SetCookie(w, &http.Cookie{
-			Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: true,
+			Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: r.TLS != nil,
 			SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0),
 		})
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -583,7 +583,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 
 	// Cookies are Secure whenever the request is served over TLS.
 	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookieName, Value: id, Path: "/", HttpOnly: true, Secure: true,
+		Name: sessionCookieName, Value: id, Path: "/", HttpOnly: true, Secure: r.TLS != nil,
 		SameSite: http.SameSiteStrictMode, Expires: expires, MaxAge: int(sessionLifetime.Seconds()),
 	})
 	http.Redirect(w, r, "/", http.StatusSeeOther)

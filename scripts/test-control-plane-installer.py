@@ -63,6 +63,10 @@ class ControlPlaneInstallerTests(unittest.TestCase):
         self.assertIn("--tls-key", manager)
         self.assertNotIn("PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true", manager)
         self.assertNotIn("PQTUNNEL_MANAGER_PUBLIC_URL=http://", manager)
+        web_doc = (ROOT / "docs/WEB-ADMIN-PANEL.md").read_text(encoding="utf-8")
+        self.assertNotIn("--public-http", web_doc)
+        self.assertNotIn("PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true", web_doc)
+        self.assertIn("https://control.example.com:6100/64_HEX_CHARACTERS/", web_doc)
 
     def test_no_static_ip_or_secret_is_embedded(self) -> None:
         embedded_ipv4 = re.findall(r"(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])", self.script)
