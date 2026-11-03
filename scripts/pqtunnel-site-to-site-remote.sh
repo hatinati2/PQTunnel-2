@@ -148,7 +148,7 @@ validate_staged_config
 
 case "$ACTION" in
   preflight)
-    PQTUNNEL_PKI_BIN="$BUNDLE/pqtunnel-pki" PQTUNNEL_PREFLIGHT_SERVER_NAME="$SERVER_NAME" bash "$BUNDLE/scripts/site-to-site-preflight.sh" --role gateway
+    PQTUNNEL_PKI_BIN="$BUNDLE/pqtunnel-pki" PQTUNNEL_PREFLIGHT_SERVER_NAME="$SERVER_NAME" PQTUNNEL_PREFLIGHT_PKI_DIR="$STAGE/gateway-pki" bash "$BUNDLE/scripts/site-to-site-preflight.sh" --role gateway
     check_network_guard yes
     check_endpoint_absent
     check_manager_state
