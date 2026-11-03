@@ -1,5 +1,7 @@
 # PQTunnel 2
 
+**Version:** 0.4.0-pqalpha.1 · **Status:** experimental development branch, not production-ready.
+
 PQTunnel 2 is an experimental Linux-first Layer-3 tunnel with mutual TLS 1.3 authentication and post-quantum cryptographic algorithms. It is maintained in a separate repository from the original PQTunnel project.
 
 > **Status: experimental / not production-ready.** This repository has not undergone an independent security audit. Do not use it to protect sensitive activity or deploy it on production infrastructure.
