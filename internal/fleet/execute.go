@@ -2,7 +2,6 @@ package fleet
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -44,7 +43,8 @@ func ExecuteLocal(ctx context.Context, controller adminapi.ManagerController, co
 			result.Message = err.Error()
 			return result
 		}
-		result.Message = fmt.Sprintf("%s|%s|%t|%s", status.State, status.Role, status.BundleAvailable, status.Output)
+		result.SetupStatus = &status
+		result.Message = status.State
 	case "setup-start":
 		setup, ok := controller.(adminapi.NodeSetupController)
 		if !ok {
@@ -96,4 +96,3 @@ func ExecuteLocal(ctx context.Context, controller adminapi.ManagerController, co
 	return result
 }
 
-var _ = errors.New
