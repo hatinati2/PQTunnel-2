@@ -298,13 +298,11 @@ ENV
  scp -P "$SSH_PORT" "$WORK/tokens/gateway" "$REMOTE:$STAGE/gateway-manager-token"
  scp -P "$SSH_PORT" "$WORK/tokens/speed" "$REMOTE:$STAGE/speedtest-token"
  scp -P "$SSH_PORT" -r "$WORK/gateway-pki" "$REMOTE:$STAGE/"
- ssh -p "$SSH_PORT" "$REMOTE" "bash '$STAGE/remote-setup.sh' preflight '$STAGE' '$VERSION' '$TLS_PORT'"
- ssh -p "$SSH_PORT" "$REMOTE" "bash '$STAGE/remote-setup.sh' install '$STAGE' '$VERSION' '$TLS_PORT'"
+ ssh -p "$SSH_PORT" "$REMOTE" "bash '$STAGE/remote-setup.sh' preflight '$STAGE' '$VERSION' '$TLS_PORT' '$NAME'"
+ ssh -p "$SSH_PORT" "$REMOTE" "bash '$STAGE/remote-setup.sh' install '$STAGE' '$VERSION' '$TLS_PORT' '$NAME'"
  timeout 8 bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "$NAME" "$TLS_PORT" || fail "Gateway TCP/$TLS_PORT unreachable. Open it in the provider firewall; Dialer routes not applied."
- ssh -p "$SSH_PORT" "$REMOTE" "bash '$STAGE/remote-setup.sh' apply-network '$STAGE' '$VERSION' '$TLS_PORT'"
- openssl verify -purpose sslclient -CAfile "$WORK/dialer-pki/ca.crt" "$WORK/dialer-pki/client.crt" >/dev/null
- cert_hash="$(openssl x509 -in "$WORK/dialer-pki/client.crt" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}')"
- key_hash="$(openssl pkey -in "$WORK/dialer-pki/client.key" -pubout -outform DER | sha256sum | awk '{print $1}')"; [[ "$cert_hash" == "$key_hash" ]] || fail 'Dialer key/certificate mismatch.'
+ ssh -p "$SSH_PORT" "$REMOTE" "bash '$STAGE/remote-setup.sh' apply-network '$STAGE' '$VERSION' '$TLS_PORT' '$NAME'"
+ "$BUNDLE/pqtunnel-pki" verify --purpose client --cert "$WORK/dialer-pki/client.crt" --key "$WORK/dialer-pki/client.key" --ca "$WORK/dialer-pki/ca.crt" --common-name 10.66.0.2 || fail "Dialer ML-DSA client certificate/key validation failed."
  install -d -o root -g root -m 0750 /etc/pqtunnel /etc/pqtunnel/pki /usr/local/lib/pqtunnel /var/lib/pqtunnel
  install -o root -g root -m 0755 "$BUNDLE/pqtunnel-client" /usr/local/bin/pqtunnel-client
  install -o root -g root -m 0644 "$WORK/dialer-pki/ca.crt" /etc/pqtunnel/pki/ca.crt; install -o root -g root -m 0644 "$WORK/dialer-pki/client.crt" /etc/pqtunnel/pki/client.crt; install -o root -g root -m 0600 "$WORK/dialer-pki/client.key" /etc/pqtunnel/pki/client.key
