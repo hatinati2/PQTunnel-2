@@ -35,7 +35,7 @@ prompt() {
 }
 usage() {
   cat <<'USAGE'
-PQTunnel one-line installer (experimental release v0.4.0-pqalpha.1)
+PQTunnel-2 one-line entry point (experimental source-only alpha v0.4.0-pqalpha.1)
 
 Usage:
   curl -fsSL https://raw.githubusercontent.com/hatinati2/PQTunnel-2/main/install.sh | sudo bash
@@ -87,7 +87,7 @@ if [[ -z "$MODE" ]]; then
   printf '  2) Install/start local web manager only\n'
   printf '  3) Guided full two-VPS setup (tunnel + both management panels, run on Iran)\n'
   printf '  4) Independent node panel + stopped local endpoint\n'
-  prompt 'Choose [1-4]: ' CHOICE
+  prompt 'Choose [1-4] (only preflight is currently enabled): ' CHOICE
   case "$CHOICE" in
     1) MODE=preflight; ROLE=both ;;
     2) MODE=manager ;;
@@ -96,6 +96,16 @@ if [[ -z "$MODE" ]]; then
     *) fail 'choose 1, 2, 3 or 4.' ;;
   esac
 fi
+
+# PQTunnel 2 is an experimental source branch. No signed/tagged release bundle
+# exists yet, so the public installer must not mutate a VPS from this branch.
+# Read-only preflight remains available.
+case "$MODE" in
+  preflight) ;;
+  *)
+    fail 'PQTunnel-2 is source-only experimental software. Installation modes are disabled until a reviewed tagged release bundle is published. No server changes were made.'
+    ;;
+esac
 
 case "$MODE" in
   site-to-site)
