@@ -1,28 +1,34 @@
 # Security policy
 
-PQTunnel is an experimental prototype and has not undergone an independent security audit. Do not use it to protect sensitive activity or on production infrastructure.
+PQTunnel 2 is experimental and has not undergone an independent security audit. Do not use it for sensitive activity or on production infrastructure.
 
 ## Reporting a vulnerability
 
-Do not open public issues containing private keys, certificates, connection tokens, server IPs you consider sensitive, or unredacted logs. Contact the maintainer privately through a trusted channel and include a minimal reproducible description. Do not expect a response-time SLA for this prototype.
+Do not open public issues containing private keys, certificates, connection tokens, operator IP addresses, hostnames, or unredacted logs. Report security issues privately through a trusted channel and include a minimal reproducible description. There is no response-time SLA for this experimental project.
 
 ## Current cryptographic design
 
 - TLS 1.3 only.
-- Explicit hybrid key-exchange group `X25519MLKEM768`; no classical key-exchange fallback is configured.
+- Default key exchange: strict hybrid `X25519MLKEM768`; no other key-exchange group is enabled in that connection.
+- Optional experimental key exchange: strict `MLKEM1024` only, with no classical fallback.
 - Mutual TLS using a private CA.
-- Certificate signatures are currently Ed25519 (classical). Authentication is therefore not post-quantum even though key exchange is hybrid post-quantum.
-- No custom cipher, KDF or cryptographic primitive is implemented by this project.
+- All CA, server, client, and peer signing keys and certificate signatures are ML-DSA-65.
+- TLS peer verification checks that every certificate in the presented and verified chains uses ML-DSA-65 public keys and ML-DSA-65 signatures. Classical certificate chains, including Ed25519, are rejected.
+- The default hybrid mode still includes classical X25519 as one component of key exchange. It must be described as hybrid, not pure post-quantum key exchange.
+- No custom cipher, KDF, or cryptographic primitive is implemented by this project.
 
 ## Known gaps
 
-- No independent security review or fuzzing campaign.
-- No online revocation/distribution or safe automated enrollment workflow.
+- No independent security review or full fuzzing campaign.
+- No online certificate revocation service or safe automated enrollment workflow.
+- Pure-PQ key exchange remains experimental pending broader interoperability and deployment testing.
 - Windows routes/DNS/kill-switch and Android certificate import/build verification remain incomplete.
-- The site-to-site link mode currently supports one configured peer-route profile per listener. The experimental `scripts/site-to-site-selective.sh` helper can apply narrowly scoped IPv4/IPv6 policy routing, forwarding and NAT for selected-port egress and explicit TCP/UDP port mappings on clean dedicated hosts; it refuses detected pre-existing firewall/forwarding state.
-- CI exercises the helper in disposable Linux network namespaces, including injected failures and rollback checks. This does not validate two independent VPSs, provider firewalls, or arbitrary existing host firewall/routing policy; real-host recovery rehearsals remain required before stable release.
-- The separate `scripts/server-network.sh` helper handles IPv4 forwarding/NAT only. Packet encapsulation itself does not configure general host routes or firewall policy, and IPv6 behavior must be reviewed for the specific network design.
-- Linux networking helpers are prototypes and are not a persistent, audited kill-switch.
-- Traffic may be exposed if endpoints, client keys, CA signing key, host firewall rules, or device permissions are compromised.
+- Network configuration helpers are prototypes and are not persistent, audited kill-switches.
+- The site-to-site helper's namespace tests do not validate real VPS pairs, provider firewalls, arbitrary existing host firewall/routing policy, or recovery after real-host failure.
+- Traffic may be exposed if endpoints, client keys, CA signing keys, host firewall rules, or device permissions are compromised.
 
-Please avoid claiming that the tunnel is "unbreakable", "fully post-quantum", "leak-proof", or ready for production.
+## Handling operator-specific data
+
+Tests must use only generated keys, loopback addresses, reserved documentation address ranges, and reserved example domains such as `.example.test`. Never copy operator-supplied IP addresses, DNS names, SSH targets, ports, tokens, passwords, certificates, private keys, server identifiers, or other deployment-specific values into source code, test fixtures, examples, CI files, logs, or screenshots. Inject deployment settings only at runtime through protected configuration and do not commit them.
+
+Please avoid claims that the software is "unbreakable", "fully secure", "leak-proof", "fully post-quantum" in hybrid mode, or production-ready.
