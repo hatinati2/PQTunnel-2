@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/mldsa"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -15,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/hatinati2/PQTunnel-2/internal/tunnel"
 )
 
 func main() {
@@ -30,6 +33,10 @@ func main() {
 		issueAdditionalServer(os.Args[2:])
 	case "issue-peer":
 		issuePeer(os.Args[2:])
+	case "verify":
+		if err := verifyCertificate(os.Args[2:]); err != nil {
+			die(err.Error())
+		}
 	default:
 		usage()
 	}
@@ -267,6 +274,99 @@ func issueClient(args []string) {
 	fmt.Printf("Issued client %s. Install only %s.crt, %s.key and ca.crt on that device.\n", ip, stem, stem)
 }
 
+// verifyCertificate validates an endpoint certificate/key pair with Go's
+// X.509 verifier. This deliberately avoids relying on the host OpenSSL version:
+// Ubuntu 24.04's stock OpenSSL 3.0 cannot parse ML-DSA certificates.
+func verifyCertificate(args []string) error {
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	certPath := fs.String("cert", "", "endpoint certificate PEM")
+	keyPath := fs.String("key", "", "matching endpoint private key PEM (must not be accessible to group/other)")
+	caPath := fs.String("ca", "", "trusted ML-DSA-65 CA certificate PEM")
+	purpose := fs.String("purpose", "", "certificate purpose: server or client")
+	serverName := fs.String("server-name", "", "optional DNS name or IP SAN to verify for a server certificate")
+	commonName := fs.String("common-name", "", "optional exact certificate Common Name to verify")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *certPath == "" || *keyPath == "" || *caPath == "" {
+		return fmt.Errorf("verify requires --cert, --key, and --ca")
+	}
+	var usage x509.ExtKeyUsage
+	switch *purpose {
+	case "server":
+		usage = x509.ExtKeyUsageServerAuth
+	case "client":
+		usage = x509.ExtKeyUsageClientAuth
+	default:
+		return fmt.Errorf("--purpose must be server or client")
+	}
+	if *purpose != "server" && *serverName != "" {
+		return fmt.Errorf("--server-name is only valid with --purpose server")
+	}
+
+	keyInfo, err := os.Lstat(*keyPath)
+	if err != nil {
+		return fmt.Errorf("stat endpoint private key: %w", err)
+	}
+	if !keyInfo.Mode().IsRegular() || keyInfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("endpoint private key must be a regular non-symlink file")
+	}
+	if keyInfo.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("endpoint private key permissions are too broad; use mode 0600")
+	}
+	pair, err := tls.LoadX509KeyPair(*certPath, *keyPath)
+	if err != nil {
+		return fmt.Errorf("load endpoint certificate/private-key pair: %w", err)
+	}
+	if len(pair.Certificate) == 0 {
+		return fmt.Errorf("endpoint certificate chain is empty")
+	}
+	peerCerts := make([]*x509.Certificate, 0, len(pair.Certificate))
+	for i, der := range pair.Certificate {
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return fmt.Errorf("parse endpoint certificate %d: %w", i, err)
+		}
+		peerCerts = append(peerCerts, cert)
+	}
+	leaf := peerCerts[0]
+	if leaf.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
+		return fmt.Errorf("endpoint certificate must permit digital signatures")
+	}
+	if *commonName != "" && leaf.Subject.CommonName != *commonName {
+		return fmt.Errorf("endpoint certificate Common Name %q does not match expected %q", leaf.Subject.CommonName, *commonName)
+	}
+
+	caPEM, err := os.ReadFile(*caPath)
+	if err != nil {
+		return fmt.Errorf("read trusted CA certificate: %w", err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return fmt.Errorf("trusted CA file does not contain a valid PEM certificate")
+	}
+	verifyOptions := x509.VerifyOptions{
+		Roots: roots,
+		KeyUsages: []x509.ExtKeyUsage{usage},
+		CurrentTime: time.Now(),
+	}
+	if *serverName != "" {
+		verifyOptions.DNSName = *serverName
+	}
+	chains, err := leaf.Verify(verifyOptions)
+	if err != nil {
+		return fmt.Errorf("endpoint certificate chain/EKU/SAN validation failed: %w", err)
+	}
+	state := tls.ConnectionState{
+		PeerCertificates: peerCerts,
+		VerifiedChains: chains,
+	}
+	if err := tunnel.VerifyMLDSA65PeerChain(state); err != nil {
+		return err
+	}
+	return nil
+}
+
 func writePrivateKey(path string, key *mldsa.PrivateKey) {
 	der, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
@@ -300,5 +400,5 @@ func serial() *big.Int {
 }
 func die(s string) { fmt.Fprintln(os.Stderr, "pqtunnel-pki:", s); os.Exit(1) }
 func usage() {
-	die("usage: pqtunnel-pki init --server-name vpn.example.com --out ./pki | issue-server --server-name peer.example.com --prefix peer --out ./pki | issue-peer --name iran --out ./pki | issue-client --ip 10.66.0.2 --out ./pki")
+	die("usage: pqtunnel-pki init --server-name vpn.example.com --out ./pki | issue-server --server-name peer.example.com --prefix peer --out ./pki | issue-peer --name iran --out ./pki | issue-client --ip 10.66.0.2 --out ./pki | verify --purpose server|client --cert FILE --key FILE --ca CA")
 }
