@@ -3,7 +3,7 @@ package manager
 import (
 	"testing"
 
-	"github.com/hatinati2/PQTunnel/internal/adminapi"
+	"github.com/hatinati2/PQTunnel-2/internal/adminapi"
 )
 
 func TestValidateNodeSetupRequest(t *testing.T) {
