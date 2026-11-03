@@ -43,18 +43,9 @@ for f in server.crt server.key ca.crt; do
   [[ -s "$PKI/$f" ]] || fail "missing or empty PKI file: $PKI/$f"
 done
 [[ ! -e "$PKI/ca.key" ]] || fail 'ca.key is present in the server PKI directory. Keep the CA private key offline and remove it from this directory.'
-command -v openssl >/dev/null || fail 'openssl is required to validate the server certificate and key; no files were installed.'
 command -v systemctl >/dev/null || fail 'systemd is required by this installer.'
 command -v ip >/dev/null || fail 'iproute2 is required by the systemd unit.'
 [[ -c /dev/net/tun ]] || fail '/dev/net/tun is unavailable; no files were installed.'
-
-# Validate that the certificate chains to the provided CA and matches the private key.
-openssl x509 -in "$PKI/server.crt" -noout >/dev/null || fail 'server.crt is not a valid PEM certificate.'
-openssl pkey -in "$PKI/server.key" -noout >/dev/null || fail 'server.key is not a valid PEM private key.'
-openssl verify -purpose sslserver -CAfile "$PKI/ca.crt" "$PKI/server.crt" >/dev/null || fail 'server.crt does not validate against ca.crt for TLS server use.'
-CERT_PUB="$(openssl x509 -in "$PKI/server.crt" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}')"
-KEY_PUB="$(openssl pkey -in "$PKI/server.key" -pubout -outform DER | sha256sum | awk '{print $1}')"
-[[ "$CERT_PUB" == "$KEY_PUB" ]] || fail 'server.key does not match server.crt.'
 
 # Do not silently replace a previous install or its certificates/unit.
 for path in /usr/local/sbin/pqtunneld /etc/systemd/system/pqtunneld.service /etc/pqtunnel/pki/server.key; do
@@ -62,7 +53,9 @@ for path in /usr/local/sbin/pqtunneld /etc/systemd/system/pqtunneld.service /etc
 done
 
 BIN_SOURCE=""
+PKI_BIN="${PQTUNNEL_PKI_BIN:-}"
 TMPBIN=""
+TMPPKI=""
 if [[ -f "$SOURCE/go.mod" ]]; then
   command -v go >/dev/null || fail 'Go 1.27+ is required to build from source. Use a matching Linux release bundle if Go is not installed.'
   GV="$(go env GOVERSION | sed 's/^go//')"
@@ -71,7 +64,11 @@ if [[ -f "$SOURCE/go.mod" ]]; then
   fi
   [[ -f "$SOURCE/cmd/pqtunneld/main.go" ]] || fail 'cmd/pqtunneld/main.go is missing from source tree.'
   TMPBIN="$(mktemp)"
-  trap '[[ -z "$TMPBIN" ]] || rm -f "$TMPBIN"' EXIT
+  cleanup() {
+    [[ -z "$TMPBIN" ]] || rm -f "$TMPBIN"
+    [[ -z "$TMPPKI" ]] || rm -f "$TMPPKI"
+  }
+  trap cleanup EXIT
   (
     cd "$SOURCE"
     GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$TMPBIN" ./cmd/pqtunneld
@@ -103,6 +100,21 @@ elif [[ -f "$SOURCE/pqtunneld" ]]; then
 else
   fail '--source must contain go.mod (source checkout) or pqtunneld (Linux release bundle).'
 fi
+
+# Use the repository's Go-native X.509 verifier. OpenSSL 3.0, shipped by
+# Ubuntu 24.04, does not understand ML-DSA certificates.
+if [[ -n "$PKI_BIN" ]]; then
+  [[ -f "$PKI_BIN" && -x "$PKI_BIN" ]] || fail 'PQTUNNEL_PKI_BIN must point to an executable pqtunnel-pki binary.'
+elif [[ -f "$SOURCE/go.mod" ]]; then
+  TMPPKI="$(mktemp)"
+  (cd "$SOURCE" && GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$TMPPKI" ./cmd/pqtunnel-pki)
+  PKI_BIN="$TMPPKI"
+elif [[ -x "$SOURCE/pqtunnel-pki" ]]; then
+  PKI_BIN="$SOURCE/pqtunnel-pki"
+else
+  fail 'source/release bundle must include cmd/pqtunnel-pki or executable pqtunnel-pki for ML-DSA validation.'
+fi
+"$PKI_BIN" verify --purpose server --cert "$PKI/server.crt" --key "$PKI/server.key" --ca "$PKI/ca.crt"
 
 install -d -o root -g root -m 0750 /etc/pqtunnel /etc/pqtunnel/pki /var/lib/pqtunnel
 install -o root -g root -m 0755 "$BIN_SOURCE" /usr/local/sbin/pqtunneld
