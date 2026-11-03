@@ -39,7 +39,7 @@ From the repository root:
 ```sh
 go test -race ./...
 go vet ./...
-go build ./cmd/pqtunneld ./cmd/pqtunnel-client ./cmd/pqtunnel-pki ./cmd/pqtunnel-manager ./cmd/pqtunnel-proxy
+go build ./cmd/pqtunneld ./cmd/pqtunnel-client ./cmd/pqtunnel-pki ./cmd/pqtunnel-manager ./cmd/pqtunnel-proxy ./cmd/pqtunnel-agent
 ```
 
 CI runs unit, race, static-analysis, cross-build, and isolated network-namespace tests. Network-namespace tests are disposable local labs. They do not connect to operator VPSs or validate provider firewalls, arbitrary host firewall policies, or real two-host recovery.
@@ -76,4 +76,4 @@ For every deployment, create a new CA and issue new server/client/peer certifica
 - `pure-pq` is experimental and must not be represented as interoperable or production-ready until separately validated.
 - This project does not claim that any cryptographic construction is unbreakable or that the entire system is risk-free.
 
-See [SECURITY.md](SECURITY.md), [the protocol description](docs/PROTOCOL.md), and the [Linux MVP release gates](docs/LINUX-MVP-RELEASE-GATE.md).
+See the [mobile control plane and one-line installer guide](docs/CONTROL-PLANE.md), [web admin panel](docs/WEB-ADMIN-PANEL.md), [SECURITY.md](SECURITY.md), [protocol description](docs/PROTOCOL.md), and [Linux MVP release gates](docs/LINUX-MVP-RELEASE-GATE.md).
