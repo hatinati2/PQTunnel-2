@@ -335,8 +335,11 @@ if (( UPGRADE )); then
   fi
 else
   if (( PUBLIC_HTTP )); then
-    systemctl enable --now pqtunnel-manager || fail 'manager could not start; inspect systemctl status pqtunnel-manager and journalctl -u pqtunnel-manager.'
     path_token="$(sed -n 's/^PQTUNNEL_MANAGER_PATH_TOKEN=//p' /etc/default/pqtunnel-manager | head -n1)"
+    if ! systemctl enable --now pqtunnel-manager; then
+      printf '\nPanel startup failed. Save these values for recovery:\nhttp://%s:%s/%s/\nPQTUNNEL_MANAGER_TOKEN=%s\n' "$PUBLIC_HOST" "$PANEL_PORT" "$path_token" "$NEW_MANAGER_TOKEN" >&2
+      fail 'manager could not start; inspect systemctl status pqtunnel-manager and journalctl -u pqtunnel-manager.'
+    fi
     printf '\nPublic HTTP panel is active at:\nhttp://%s:%s/%s/\n' "$PUBLIC_HOST" "$PANEL_PORT" "$path_token"
     printf 'Save this login token now; it is not shown again:\nPQTUNNEL_MANAGER_TOKEN=%s\n' "$NEW_MANAGER_TOKEN"
     unset NEW_MANAGER_TOKEN
@@ -346,11 +349,7 @@ else
   if (( WITH_NODE_ENDPOINT )); then echo "Standalone endpoint assets installed for role $ROLE; tunnel service remains stopped and disabled."; fi
 fi
 if (( PUBLIC_HTTP )); then
-  path_token="$(sed -n 's/^PQTUNNEL_MANAGER_PATH_TOKEN=//p' /etc/default/pqtunnel-manager | head -n1)"
   printf 'WARNING: public HTTP is unencrypted. The secret path and login token can be intercepted or modified; path secrecy does not provide encryption. Permit TCP/%s only from trusted source IPs where possible.\n' "$PANEL_PORT"
-  if (( ! UPGRADE )); then
-    printf 'Panel URL (save it now; it is not written to normal logs):\nhttp://%s:%s/%s/\n' "$PUBLIC_HOST" "$PANEL_PORT" "$path_token"
-  fi
 else
   echo 'For remote browser access, use SSH local forwarding; do not expose port 9091 publicly.'
 fi
