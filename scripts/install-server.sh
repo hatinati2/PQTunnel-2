@@ -48,7 +48,7 @@ command -v ip >/dev/null || fail 'iproute2 is required by the systemd unit.'
 [[ -c /dev/net/tun ]] || fail '/dev/net/tun is unavailable; no files were installed.'
 
 # Do not silently replace a previous install or its certificates/unit.
-for path in /usr/local/sbin/pqtunneld /etc/systemd/system/pqtunneld.service /etc/pqtunnel/pki/server.key; do
+for path in /usr/local/sbin/pqtunneld /usr/local/bin/pqtunnel-pki /etc/systemd/system/pqtunneld.service /etc/pqtunnel/pki/server.key; do
   [[ ! -e "$path" ]] || fail "existing installation artifact detected at $path; refusing to overwrite it. Review/update manually with a backup."
 done
 
@@ -123,6 +123,8 @@ fi
 
 install -d -o root -g root -m 0750 /etc/pqtunnel /etc/pqtunnel/pki /var/lib/pqtunnel
 install -o root -g root -m 0755 "$BIN_SOURCE" /usr/local/sbin/pqtunneld
+install -d -o root -g root -m 0755 /usr/local/bin
+install -o root -g root -m 0755 "$PKI_BIN" /usr/local/bin/pqtunnel-pki
 install -o root -g root -m 0644 "$PKI/server.crt" /etc/pqtunnel/pki/server.crt
 install -o root -g root -m 0600 "$PKI/server.key" /etc/pqtunnel/pki/server.key
 install -o root -g root -m 0644 "$PKI/ca.crt" /etc/pqtunnel/pki/ca.crt
