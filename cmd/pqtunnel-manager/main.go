@@ -9,11 +9,11 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"path/filepath"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
-	"os/signal"
 	"syscall"
 	"time"
 
