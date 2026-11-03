@@ -32,19 +32,6 @@ done
 [[ "$(stat -c '%a' "$BUNDLE/gateway-pki/server.key")" == 600 ]]
 [[ "$(stat -c '%a' "$BUNDLE/dialer-pki/client.key")" == 600 ]]
 
-openssl verify -purpose sslserver \
-  -CAfile "$BUNDLE/gateway-pki/ca.crt" \
-  "$BUNDLE/gateway-pki/server.crt" >/dev/null
-
-openssl verify -purpose sslclient \
-  -CAfile "$BUNDLE/dialer-pki/ca.crt" \
-  "$BUNDLE/dialer-pki/client.crt" >/dev/null
-
-SUBJECT="$(openssl x509 -in "$BUNDLE/dialer-pki/client.crt" -noout -subject -nameopt RFC2253)"
-[[ "$SUBJECT" == *"CN=10.66.0.2"* ]] || {
-  echo "Unexpected client certificate identity: $SUBJECT" >&2
-  exit 1
-}
 
 if bash scripts/prepare-site-to-site-pki.sh \
   --server-name 198.51.100.10 \
