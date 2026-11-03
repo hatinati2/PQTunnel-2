@@ -2,7 +2,7 @@ package tunnel
 
 import (
 	"context"
-	"crypto/ed25519"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -48,12 +48,14 @@ func (d *serverPolicyTestDevice) Close() error {
 	return nil
 }
 
-func createPolicyTestCert(t *testing.T, ca *x509.Certificate, caKey ed25519.PrivateKey, cn, dnsName string, usage x509.ExtKeyUsage) tls.Certificate {
+func createPolicyTestCert(t *testing.T, ca *x509.Certificate, caKey *mldsa.PrivateKey, cn, dnsName string, usage x509.ExtKeyUsage) tls.Certificate {
 	t.Helper()
-	pub, key, err := ed25519.GenerateKey(rand.Reader)
+	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil { t.Fatal(err) }
+	pub := key.PublicKey()
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		SignatureAlgorithm: x509.MLDSA65,
 		Subject: pkix.Name{CommonName: cn},
 		NotBefore: time.Now().Add(-time.Minute),
 		NotAfter: time.Now().Add(time.Hour),
@@ -62,7 +64,7 @@ func createPolicyTestCert(t *testing.T, ca *x509.Certificate, caKey ed25519.Priv
 		DNSNames: nil,
 	}
 	if dnsName != "" { tmpl.DNSNames = []string{dnsName} }
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, pub, caKey)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, key.PublicKey(), caKey)
 	if err != nil { t.Fatal(err) }
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil { t.Fatal(err) }
@@ -73,12 +75,13 @@ func createPolicyTestCert(t *testing.T, ca *x509.Certificate, caKey ed25519.Priv
 	return cert
 }
 
-func createPolicyTestCA(t *testing.T) (*x509.Certificate, ed25519.PrivateKey, *x509.CertPool) {
+func createPolicyTestCA(t *testing.T) (*x509.Certificate, *mldsa.PrivateKey, *x509.CertPool) {
 	t.Helper()
-	pub, key, err := ed25519.GenerateKey(rand.Reader)
+	key, err := mldsa.GenerateKey(mldsa.MLDSA65())
 	if err != nil { t.Fatal(err) }
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		SignatureAlgorithm: x509.MLDSA65,
 		Subject: pkix.Name{CommonName:"PQTunnel policy test CA"},
 		NotBefore: time.Now().Add(-time.Minute),
 		NotAfter: time.Now().Add(2*time.Hour),
@@ -86,7 +89,7 @@ func createPolicyTestCA(t *testing.T) (*x509.Certificate, ed25519.PrivateKey, *x
 		BasicConstraintsValid: true,
 		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, pub, key)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.PublicKey(), key)
 	if err != nil { t.Fatal(err) }
 	ca, err := x509.ParseCertificate(der)
 	if err != nil { t.Fatal(err) }
