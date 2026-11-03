@@ -9,6 +9,8 @@ Do not mark PQTunnel 2 stable until these items have been performed and their re
 - [ ] Confirm Linux amd64/arm64 and Windows amd64 artifacts build from the tagged commit.
 - [ ] Build the Android AAR with the documented `gomobile` version, SDK and NDK; install it on physical devices.
 
+See [the two-host Linux acceptance runbook](TWO-HOST-ACCEPTANCE.md) for the controlled lab procedure and evidence template.
+
 ## TLS and identity
 
 - [ ] Verify a real handshake selects exactly `X25519MLKEM768` in hybrid mode.
