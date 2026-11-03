@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
