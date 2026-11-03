@@ -44,7 +44,7 @@ class OneLineInstallerTests(unittest.TestCase):
 
     def test_preflight_is_the_only_enabled_action(self) -> None:
         self.assertIn('curl --fail --silent --show-error --location "$RAW_BASE/scripts/site-to-site-preflight.sh"', self.script)
-        self.assertIn("read-only host checks", self.script)
+        self.assertIn("read-only preflight", self.script)
         self.assertIn("PQTunnel-2 is source-only experimental software", self.script)
 
     def test_pkI_generator_uses_ml_dsa_65_and_keeps_ca_offline(self) -> None:
