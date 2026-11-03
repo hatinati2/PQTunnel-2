@@ -71,7 +71,7 @@ func TestValidateSiteToSiteSetupRequestRejectsUnsafeValues(t *testing.T) {
 }
 
 func TestValidSetupHostRejectsMalformedNumericIPv4(t *testing.T) {
-	for _, host := range []string{"999.999.999.999", "256.1.1.1", "203.0.113.10"} {
+	for _, host := range []string{"999.999.999.999", "256.1.1.1", "01.2.3.4"} {
 		if validSetupHost(host) {
 			t.Errorf("invalid IPv4 address accepted as a DNS name: %q", host)
 		}
