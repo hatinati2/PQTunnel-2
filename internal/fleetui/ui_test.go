@@ -208,6 +208,20 @@ func TestDialerInstallCommandRequiresHTTPAndSecretPath(t *testing.T) {
 }
 
 
+
+func TestMobileFleetLoginUsesSameOriginReferrerPolicy(t *testing.T) {
+	h, err := New(strings.Repeat("x", 32), &fakeCoordinator{}, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://198.51.100.10:6100/login", nil)
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, req)
+	if got := resp.Header().Get("Referrer-Policy"); got != "same-origin" {
+		t.Fatalf("Referrer-Policy=%q, want same-origin", got)
+	}
+}
+
 func TestMobileFleetAcceptsOpaqueOriginOnlyWithMatchingReferer(t *testing.T) {
 	const loginToken = "fleet-panel-login-token-with-at-least-32-bytes"
 	const host = "198.51.100.10:6100"
