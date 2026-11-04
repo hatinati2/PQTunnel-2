@@ -206,3 +206,35 @@ func TestDialerInstallCommandRequiresHTTPAndSecretPath(t *testing.T) {
 		t.Fatalf("install command does not contain the HTTP URL: %s", command)
 	}
 }
+
+
+func TestMobileFleetAcceptsOpaqueOriginOnlyWithMatchingReferer(t *testing.T) {
+	const loginToken = "fleet-panel-login-token-with-at-least-32-bytes"
+	const host = "198.51.100.10:6100"
+	h, err := New(loginToken, &fakeCoordinator{}, "http://"+host+"/"+strings.Repeat("a", 64), strings.Repeat("d", 40))
+	if err != nil { t.Fatal(err) }
+
+	login := func(referer string) *httptest.ResponseRecorder {
+		values := url.Values{"token": {loginToken}}
+		req := httptest.NewRequest(http.MethodPost, "http://"+host+"/login", strings.NewReader(values.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "null")
+		if referer != "" { req.Header.Set("Referer", referer) }
+		resp := httptest.NewRecorder()
+		h.ServeHTTP(resp, req)
+		return resp
+	}
+
+	if resp := login("http://"+host+"/"); resp.Code != http.StatusSeeOther {
+		t.Fatalf("same-origin opaque Origin login status=%d, want %d", resp.Code, http.StatusSeeOther)
+	}
+	for _, referer := range []string{
+		"",
+		"http://attacker.invalid/",
+		"https://"+host+"/",
+	} {
+		if resp := login(referer); resp.Code != http.StatusForbidden {
+			t.Errorf("opaque Origin with Referer %q status=%d, want %d", referer, resp.Code, http.StatusForbidden)
+		}
+	}
+}
