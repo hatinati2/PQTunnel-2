@@ -481,7 +481,7 @@ func TestPublicHTTPOriginRequiresExplicitInsecureOptIn(t *testing.T) {
 	}
 	cookies := resp.Result().Cookies()
 	if len(cookies) != 1 || cookies[0].Secure {
-		t.Fatalf("plaintext HTTP session cookie should not claim Secure: %#v", cookies)
+		t.Fatalf("loopback public-HTTP unit test cookie should not claim Secure: %#v", cookies)
 	}
 
 	// The default constructor must continue to reject the same public HTTP origin.

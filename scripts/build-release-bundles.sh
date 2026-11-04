@@ -40,7 +40,7 @@ for goarch in amd64 arm64; do
   rm -rf -- "$staging"
   mkdir -p -- "$staging"
 
-  for cmd in pqtunneld pqtunnel-client pqtunnel-pki pqtunnel-proxy; do
+  for cmd in pqtunneld pqtunnel-client pqtunnel-pki pqtunnel-proxy pqtunnel-agent; do
     GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" \
       go build -trimpath -ldflags='-s -w' -o "$staging/$cmd" "./cmd/$cmd"
   done
@@ -73,10 +73,10 @@ validate_archive() {
   [[ -s "$archive" ]] || fail "missing or empty archive: $archive"
   archive_list="$(tar -tzf "$archive")" || fail "cannot inspect archive: $archive"
   for relative in \
-    pqtunneld pqtunnel-client pqtunnel-pki pqtunnel-proxy pqtunnel-manager \
+    pqtunneld pqtunnel-client pqtunnel-pki pqtunnel-proxy pqtunnel-agent pqtunnel-manager \
     README.md README.fa.md SECURITY.md LICENSE CHANGELOG.md \
     scripts/site-to-site-preflight.sh scripts/site-to-site-selective.sh \
-    deploy/systemd/pqtunnel-manager.service docs/LINUX-MVP-RELEASE-GATE.md; do
+    deploy/systemd/pqtunnel-manager.service deploy/systemd/pqtunnel-agent.service docs/LINUX-MVP-RELEASE-GATE.md; do
     grep -Fxq "${pkg}/${relative}" <<<"$archive_list" || fail "$arch bundle is missing ${relative}"
   done
   if grep -Fq "${pkg}/PQTunnel/" <<<"$archive_list"; then
@@ -95,13 +95,14 @@ SMOKE_TMP="$(mktemp -d -t pqtunnel-release-smoke.XXXXXX)"
 trap 'rm -rf -- "$SMOKE_TMP"' EXIT
 tar -xzf "$DIST_DIR/${PKG_AMD64}.tar.gz" -C "$SMOKE_TMP"
 BIN_DIR="$SMOKE_TMP/$PKG_AMD64"
-for binary in pqtunneld pqtunnel-client pqtunnel-pki pqtunnel-proxy pqtunnel-manager; do
+for binary in pqtunneld pqtunnel-client pqtunnel-pki pqtunnel-proxy pqtunnel-manager pqtunnel-agent; do
   [[ -x "$BIN_DIR/$binary" ]] || fail "amd64 bundle binary is not executable: $binary"
 done
 
 "$BIN_DIR/pqtunneld" -h >/dev/null 2>&1
 "$BIN_DIR/pqtunnel-client" -h >/dev/null 2>&1
 "$BIN_DIR/pqtunnel-proxy" -h >/dev/null 2>&1
+"$BIN_DIR/pqtunnel-agent" -h >/dev/null 2>&1
 if "$BIN_DIR/pqtunnel-pki" >"$SMOKE_TMP/pki.log" 2>&1; then
   fail "pqtunnel-pki unexpectedly succeeded without a subcommand"
 fi

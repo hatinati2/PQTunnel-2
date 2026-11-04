@@ -524,7 +524,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		delete(h.sessions, id)
 		h.mu.Unlock()
 		http.SetCookie(w, &http.Cookie{
-			Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true,
+			Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: r.TLS != nil,
 			SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0),
 		})
 		http.Redirect(w, r, "/login", http.StatusSeeOther)

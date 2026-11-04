@@ -39,7 +39,7 @@ PQTunnel 2 یک شاخهٔ مستقل و آزمایشی از پروژهٔ تون
 ```sh
 go test -race ./...
 go vet ./...
-go build ./cmd/pqtunneld ./cmd/pqtunnel-client ./cmd/pqtunnel-pki ./cmd/pqtunnel-manager ./cmd/pqtunnel-proxy
+go build ./cmd/pqtunneld ./cmd/pqtunnel-client ./cmd/pqtunnel-pki ./cmd/pqtunnel-manager ./cmd/pqtunnel-proxy ./cmd/pqtunnel-agent
 ```
 
 CI تست‌های واحد، race، تحلیل ایستا، cross-build و آزمایش‌های network namespace ایزوله را اجرا می‌کند. تست‌های network namespace در آزمایشگاه‌های موقت محلی اجرا می‌شوند؛ به VPS واقعی متصل نمی‌شوند و فایروال ارائه‌دهنده یا بازیابی ارتباط بین دو سرور واقعی را تأیید نمی‌کنند.
@@ -76,4 +76,4 @@ go run ./cmd/pqtunnel-pki verify --purpose server --cert "$tmp/pki/server.crt" -
 - حالت `pure-pq` آزمایشی است و تا زمان اعتبارسنجی جداگانه نباید سازگار با همهٔ پیاده‌سازی‌ها یا آمادهٔ تولید معرفی شود.
 - هیچ ساختار رمزنگاری‌ای غیرقابل‌شکستن یا بدون ریسک تضمین نمی‌شود.
 
-جزئیات بیشتر در [SECURITY.md](SECURITY.md)، [شرح پروتکل](docs/PROTOCOL.md) و [معیارهای انتشار MVP لینوکس](docs/LINUX-MVP-RELEASE-GATE.md) آمده است.
+راهنمای [مرکز کنترل موبایل و نصب یک‌خطی](docs/CONTROL-PLANE.md)، [پنل مدیریت وب](docs/WEB-ADMIN-PANEL.md)، [امنیت](SECURITY.md)، [شرح پروتکل](docs/PROTOCOL.md) و [معیارهای انتشار MVP لینوکس](docs/LINUX-MVP-RELEASE-GATE.md) را ببین.
