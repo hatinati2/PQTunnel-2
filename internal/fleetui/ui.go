@@ -426,13 +426,24 @@ func (h *Handler) sameOrigin(r *http.Request) bool {
 
 func sameOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
+	expectedScheme := "http"
+	if r.TLS != nil { expectedScheme = "https" }
+
+	// Some browsers send an opaque Origin ("null") for otherwise same-origin
+	// form navigations. Accept it only when Referer independently confirms the
+	// exact request scheme and host; never treat a missing Referer as trusted.
+	if origin == "null" {
+		referer := r.Header.Get("Referer")
+		if referer == "" { return false }
+		u, err := url.Parse(referer)
+		return err == nil && u.Host != "" && u.User == nil &&
+			strings.EqualFold(u.Host, r.Host) && strings.EqualFold(u.Scheme, expectedScheme)
+	}
 	if origin == "" {
 		return r.Header.Get("Sec-Fetch-Site") == "same-origin"
 	}
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" || u.User != nil { return false }
-	expectedScheme := "http"
-	if r.TLS != nil { expectedScheme = "https" }
 	return strings.EqualFold(u.Host, r.Host) && strings.EqualFold(u.Scheme, expectedScheme)
 }
 
