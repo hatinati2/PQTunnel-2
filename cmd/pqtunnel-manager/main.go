@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
@@ -11,7 +9,6 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -32,19 +29,17 @@ func main() {
 	}
 	listen := envString("PQTUNNEL_MANAGER_LISTEN", "127.0.0.1:9091")
 	publicHost := os.Getenv("PQTUNNEL_MANAGER_PUBLIC_HOST")
-	certFile := os.Getenv("PQTUNNEL_MANAGER_TLS_CERT")
-	keyFile := os.Getenv("PQTUNNEL_MANAGER_TLS_KEY")
 	isLoopback := adminui.ValidateLoopbackAddress(listen) == nil
 	allowInsecurePublicHTTP := strings.EqualFold(os.Getenv("PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP"), "true")
-	if allowInsecurePublicHTTP {
-		fatalIf(errors.New("public plaintext HTTP is disabled; configure a valid TLS certificate and key"))
-	}
 	pathToken := os.Getenv("PQTUNNEL_MANAGER_PATH_TOKEN")
 	if !isLoopback {
-		if pathToken == "" {
-			fatalIf(fmt.Errorf("public manager listeners require a per-install PQTUNNEL_MANAGER_PATH_TOKEN; use 32 random bytes encoded as 64 lowercase hexadecimal characters"))
+		if !allowInsecurePublicHTTP {
+			fatalIf(errors.New("public HTTP requires explicit PQTUNNEL_MANAGER_ALLOW_INSECURE_PUBLIC_HTTP=true"))
 		}
-		fatalIf(validatePublicTLSListener(listen, publicHost, certFile, keyFile))
+		if pathToken == "" {
+			fatalIf(fmt.Errorf("public manager listeners require a per-install PQTUNNEL_MANAGER_PATH_TOKEN with 64 lowercase hexadecimal characters"))
+		}
+		fatalIf(validatePublicHTTPListener(listen, publicHost))
 	}
 	token := os.Getenv("PQTUNNEL_MANAGER_TOKEN")
 	if len([]byte(token)) < 32 {
@@ -129,83 +124,44 @@ func main() {
 	}()
 	if isLoopback {
 		fmt.Printf("PQTunnel manager (%s) available at http://%s/ (loopback-only; token protected)\n", role, listen)
-		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fatalIf(err)
-		}
 	} else {
-		server.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS13}
-		_, panelPort, _ := net.SplitHostPort(listen)
-		fmt.Printf("PQTunnel manager (%s) available at https://%s:%s/ (TLS 1.3 enabled; host validated)\n", role, publicHost, panelPort)
-		if err := server.ServeTLS(listener, certFile, keyFile); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fatalIf(err)
+		panelURL := os.Getenv("PQTUNNEL_MANAGER_PUBLIC_URL")
+		if panelURL == "" {
+			_, panelPort, _ := net.SplitHostPort(listen)
+			panelURL = fmt.Sprintf("http://%s:%s/%s/", publicHost, panelPort, pathToken)
 		}
+		fmt.Printf("PQTunnel manager (%s) available at %s (PLAINTEXT HTTP; restrict firewall to trusted IPs)\n", role, panelURL)
+	}
+	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		fatalIf(err)
 	}
 }
 
-func validPublicTLSHost(host string) bool {
-	if host == "" || len(host) > 253 {
-		return false
-	}
-	if _, err := netip.ParseAddr(host); err == nil {
-		return false
+func validPublicHTTPHost(host string) bool {
+	if host == "" || len(host) > 253 { return false }
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return !ip.IsLoopback() && !ip.IsUnspecified() && !ip.IsMulticast()
 	}
 	labels := strings.Split(host, ".")
-	if len(labels) < 2 {
-		return false
-	}
+	if len(labels) < 2 { return false }
 	for _, label := range labels {
-		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-			return false
-		}
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' { return false }
 		for _, c := range label {
-			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-				(c >= '0' && c <= '9') || c == '-') {
-				return false
-			}
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') { return false }
 		}
 	}
 	return true
 }
 
-func validatePublicTLSListener(address, publicHost, certFile, keyFile string) error {
+func validatePublicHTTPListener(address, publicHost string) error {
 	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return fmt.Errorf("public manager listen address must be IP:port (for example 0.0.0.0:6100)")
-	}
+	if err != nil { return fmt.Errorf("public manager listen address must be IP:port (for example 0.0.0.0:6100)") }
 	bindIP, err := netip.ParseAddr(host)
-	if err != nil {
-		return fmt.Errorf("public manager listener must use a literal IP or wildcard address")
-	}
+	if err != nil { return fmt.Errorf("public manager listener must use a literal IP or wildcard address") }
 	portNumber, err := strconv.Atoi(port)
-	if err != nil || portNumber < 1 || portNumber > 65535 {
-		return fmt.Errorf("public manager listen port must be between 1 and 65535")
-	}
-	if !validPublicTLSHost(publicHost) {
-		return fmt.Errorf("PQTUNNEL_MANAGER_PUBLIC_HOST must be a fully qualified DNS hostname")
-	}
-	if !bindIP.IsUnspecified() {
-		return fmt.Errorf("bind the public TLS listener to 0.0.0.0:%s when using a DNS hostname", port)
-	}
-	if certFile == "" || keyFile == "" {
-		return fmt.Errorf("public manager access requires PQTUNNEL_MANAGER_TLS_CERT and PQTUNNEL_MANAGER_TLS_KEY; refusing plaintext HTTP")
-	}
-	if !filepath.IsAbs(certFile) || !filepath.IsAbs(keyFile) {
-		return fmt.Errorf("TLS certificate and key paths must be absolute")
-	}
-	pair, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return fmt.Errorf("cannot load TLS certificate/key pair: %w", err)
-	}
-	if len(pair.Certificate) == 0 {
-		return fmt.Errorf("TLS certificate chain is empty")
-	}
-	leaf, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil {
-		return fmt.Errorf("cannot parse TLS leaf certificate: %w", err)
-	}
-	if err := leaf.VerifyHostname(publicHost); err != nil {
-		return fmt.Errorf("TLS certificate SAN does not match the configured public host: %w", err)
-	}
+	if err != nil || portNumber < 1 || portNumber > 65535 { return fmt.Errorf("public manager listen port must be between 1 and 65535") }
+	if !validPublicHTTPHost(publicHost) { return fmt.Errorf("PQTUNNEL_MANAGER_PUBLIC_HOST must be a public DNS hostname or IP address") }
+	if !bindIP.IsUnspecified() { return fmt.Errorf("bind the public HTTP listener to 0.0.0.0:%s", port) }
 	return nil
 }
 

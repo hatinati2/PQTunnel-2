@@ -207,7 +207,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
 		if err := r.ParseForm(); err != nil || !h.validCSRF(r, current) { http.Error(w, "invalid request", http.StatusForbidden); return }
 		h.mu.Lock(); delete(h.sessions, id); h.mu.Unlock()
-		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
+		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: -1, Expires: time.Unix(1, 0)})
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	case "/invite":
 		if r.Method != http.MethodPost { methodNotAllowed(w, "POST"); return }
@@ -241,9 +241,9 @@ func (h *Handler) dialerInstallCommand(token string) (string, error) {
 		if !(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f') { return "", errors.New("install commit ref is invalid") }
 	}
 	u, err := url.Parse(h.panelBaseURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
+	if err != nil || u.Scheme != "http" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" ||
 		u.RawPath != "" || !validPanelSecretPath(u.Path) {
-		return "", errors.New("آدرس پنل باید HTTPS معتبر و شامل مسیر محرمانهٔ ۲۵۶ بیتی باشد")
+		return "", errors.New("آدرس پنل باید HTTP معتبر و شامل مسیر محرمانهٔ ۲۵۶ بیتی باشد")
 	}
 	rawURL := u.String()
 	script := "https://raw.githubusercontent.com/hatinati2/PQTunnel-2/" + h.installRef + "/scripts/pqtunnel-control-install.sh"
@@ -333,7 +333,7 @@ func (h *Handler) handlePair(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
-	if !sameOrigin(r) { http.Error(w, "origin rejected", http.StatusForbidden); return }
+	if !h.sameOrigin(r) { http.Error(w, "origin rejected", http.StatusForbidden); return }
 	key := remoteKey(r.RemoteAddr)
 	h.mu.Lock()
 	if f := h.failures[key]; time.Now().Before(f.BlockedUntil) { h.mu.Unlock(); http.Error(w, "too many login attempts", http.StatusTooManyRequests); return }
@@ -357,7 +357,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	for old, s := range h.sessions { if time.Now().After(s.Expires) { delete(h.sessions, old) } }
 	h.sessions[id] = session{CSRF: csrf, Expires: expires}
 	h.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: id, Path: "/", HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode, Expires: expires, MaxAge: int(sessionTTL.Seconds())})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: id, Path: "/", HttpOnly: true, Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, Expires: expires, MaxAge: int(sessionTTL.Seconds())})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -402,7 +402,7 @@ func (h *Handler) sessionFor(r *http.Request) (string, session, bool) {
 }
 
 func (h *Handler) requirePost(w http.ResponseWriter, r *http.Request) (string, session, bool) {
-	if !sameOrigin(r) { http.Error(w, "origin rejected", http.StatusForbidden); return "", session{}, false }
+	if !h.sameOrigin(r) { http.Error(w, "origin rejected", http.StatusForbidden); return "", session{}, false }
 	id, current, ok := h.sessionFor(r)
 	if !ok { http.Redirect(w, r, "/login", http.StatusSeeOther); return "", session{}, false }
 	return id, current, true
@@ -415,6 +415,13 @@ func (h *Handler) validCSRF(r *http.Request, current session) bool {
 func (h *Handler) render(w http.ResponseWriter, data pageData) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = pageTemplate.Execute(w, data)
+}
+
+func (h *Handler) sameOrigin(r *http.Request) bool {
+	if !sameOrigin(r) { return false }
+	if h.panelBaseURL == "" { return true }
+	expected, err := url.Parse(h.panelBaseURL)
+	return err == nil && expected.Host != "" && strings.EqualFold(expected.Host, r.Host)
 }
 
 func sameOrigin(r *http.Request) bool {

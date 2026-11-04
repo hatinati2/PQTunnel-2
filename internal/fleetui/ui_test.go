@@ -61,7 +61,7 @@ func TestMobileFleetLoginDashboardAndInvite(t *testing.T) {
 			},
 		},
 	}
-	h, err := New(loginToken, coordinator, "https://control.example.test:6100/"+strings.Repeat("b", 64), installRef)
+	h, err := New(loginToken, coordinator, "http://198.51.100.10:6100/"+strings.Repeat("b", 64), installRef)
 	if err != nil { t.Fatal(err) }
 
 	loginValues := url.Values{"token": {loginToken}}
@@ -72,7 +72,7 @@ func TestMobileFleetLoginDashboardAndInvite(t *testing.T) {
 	h.ServeHTTP(loginResp, loginReq)
 	if loginResp.Code != http.StatusSeeOther { t.Fatalf("login status=%d body=%s", loginResp.Code, loginResp.Body.String()) }
 	cookies := loginResp.Result().Cookies()
-	if len(cookies) != 1 || !cookies[0].HttpOnly || !cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode {
+	if len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].Secure || cookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatalf("session cookie not hardened: %#v", cookies)
 	}
 
@@ -105,7 +105,7 @@ func TestMobileFleetLoginDashboardAndInvite(t *testing.T) {
 func TestMobileFleetRejectsCrossOriginActions(t *testing.T) {
 	const loginToken = "fleet-panel-login-token-with-at-least-32-bytes"
 	coordinator := &fakeCoordinator{snapshot: fleet.DashboardSnapshot{Gateway: adminapi.ManagerSnapshot{Role: "gateway"}}}
-	h, err := New(loginToken, coordinator, "https://control.example.test:6100/"+strings.Repeat("c", 64), strings.Repeat("d", 40))
+	h, err := New(loginToken, coordinator, "http://198.51.100.10:6100/"+strings.Repeat("c", 64), strings.Repeat("d", 40))
 	if err != nil { t.Fatal(err) }
 	loginValues := url.Values{"token": {loginToken}}
 	loginReq := httptest.NewRequest(http.MethodPost, "http://198.51.100.10:6100/login", strings.NewReader(loginValues.Encode()))
@@ -144,7 +144,7 @@ func TestMobileFleetDisplaysGatewayOperationAndConfigurationErrors(t *testing.T)
 		},
 		executeResult: fleet.CommandResult{Success: false, Message: "systemd restart failed"},
 	}
-	h, err := New(loginToken, coordinator, "https://control.example.test:6100/"+strings.Repeat("b", 64), strings.Repeat("d", 40))
+	h, err := New(loginToken, coordinator, "http://198.51.100.10:6100/"+strings.Repeat("b", 64), strings.Repeat("d", 40))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,20 +193,16 @@ func TestMobileFleetDisplaysGatewayOperationAndConfigurationErrors(t *testing.T)
 	}
 }
 
-func TestDialerInstallCommandRequiresHTTPSAndSecretPath(t *testing.T) {
+func TestDialerInstallCommandRequiresHTTPAndSecretPath(t *testing.T) {
 	const ref = "0123456789abcdef0123456789abcdef01234567"
-	h := &Handler{installRef: ref, panelBaseURL: "http://198.51.100.10:6100/" + strings.Repeat("a", 64)}
-	if _, err := h.dialerInstallCommand(strings.Repeat("b", 64)); err == nil {
-		t.Fatal("plaintext HTTP enrollment URL must be rejected")
-	}
-	h.panelBaseURL = "https://control.example.test:6100/not-a-secret-path"
-	if _, err := h.dialerInstallCommand(strings.Repeat("b", 64)); err == nil {
-		t.Fatal("non-secret panel path must be rejected")
-	}
-	h.panelBaseURL = "https://control.example.test:6100/" + strings.Repeat("a", 64)
+	h := &Handler{installRef: ref, panelBaseURL: "https://198.51.100.10:6100/" + strings.Repeat("a", 64)}
+	if _, err := h.dialerInstallCommand(strings.Repeat("b", 64)); err == nil { t.Fatal("HTTPS enrollment URL must be rejected in HTTP-only mode") }
+	h.panelBaseURL = "http://198.51.100.10:6100/not-a-secret-path"
+	if _, err := h.dialerInstallCommand(strings.Repeat("b", 64)); err == nil { t.Fatal("non-secret panel path must be rejected") }
+	h.panelBaseURL = "http://198.51.100.10:6100/" + strings.Repeat("a", 64)
 	command, err := h.dialerInstallCommand(strings.Repeat("b", 64))
 	if err != nil { t.Fatal(err) }
-	if !strings.Contains(command, "--control-url \"https://control.example.test:6100/"+strings.Repeat("a", 64)+"\"") {
-		t.Fatalf("install command does not contain the HTTPS URL: %s", command)
+	if !strings.Contains(command, "--control-url \"http://198.51.100.10:6100/"+strings.Repeat("a", 64)+"\"") {
+		t.Fatalf("install command does not contain the HTTP URL: %s", command)
 	}
 }

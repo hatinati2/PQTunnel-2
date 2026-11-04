@@ -142,9 +142,9 @@ func fleetCompleteEnrollment(token string, privateKey *ecdh.PrivateKey, reply fl
 
 func validateBaseURL(value string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(value))
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" ||
+	if err != nil || u.Scheme != "http" || u.Host == "" || u.User != nil || u.RawQuery != "" ||
 		u.Fragment != "" || u.RawPath != "" || !validSecretPath(u.Path) {
-		return "", errors.New("control URL must use HTTPS and include the 256-bit Gateway secret path")
+		return "", errors.New("control URL must use HTTP and include the 256-bit Gateway secret path")
 	}
 	return strings.TrimRight(u.String(), "/"), nil
 }
