@@ -57,8 +57,8 @@ func TestWithPathTokenProtectsAndRewritesPanelRoutes(t *testing.T) {
 	if dashboardResp.Code != http.StatusOK {
 		t.Fatalf("dashboard status=%d body=%s", dashboardResp.Code, body)
 	}
-	if dashboardResp.Header().Get("Referrer-Policy") != "no-referrer" {
-		t.Fatalf("secret path must not be sent in Referer headers, got %q", dashboardResp.Header().Get("Referrer-Policy"))
+	if dashboardResp.Header().Get("Referrer-Policy") != "same-origin" {
+		t.Fatalf("same-origin requests must retain the Referer header, got %q", dashboardResp.Header().Get("Referrer-Policy"))
 	}
 	if !strings.Contains(body, `action="/`+pathToken+`/logout"`) ||
 		!strings.Contains(body, `href="/`+pathToken+`/logs"`) {
